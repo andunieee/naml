@@ -25,10 +25,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # naml depends on orangedb by relative path (../orangedb/orangedb).
-      - name: Check out orangedb
-        run: git clone --depth 1 https://github.com/andunieee/orangedb.git "$GITHUB_WORKSPACE/../orangedb"
-
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
