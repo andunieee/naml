@@ -1,0 +1,74 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: naml-${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@v4
+
+      # naml depends on orangedb by relative path (../orangedb/orangedb).
+      - name: Check out orangedb
+        run: git clone --depth 1 https://github.com/andunieee/orangedb.git "$GITHUB_WORKSPACE/../orangedb"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - uses: mlugg/setup-zig@v1
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+
+      - name: Build static binary
+        run: cargo zigbuild --locked --release --target ${{ matrix.target }}
+
+      - name: Prepare asset
+        run: |
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/naml" "dist/naml-${{ matrix.target }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: naml-${{ matrix.target }}
+          path: dist/naml-${{ matrix.target }}
+          if-no-files-found: error
+
+  release:
+    name: publish release assets
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/naml-*
+          generate_release_notes: true

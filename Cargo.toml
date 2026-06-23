@@ -10,6 +10,7 @@ anyhow = "1"
 backhand = { version = "0.25", default-features = false, features = ["xz", "gzip", "zstd"] }
 bzip2 = "0.6"
 clap = { version = "4.5", features = ["derive"] }
+clap_complete = "4.5"
 console = "0.16"
 dialoguer = { version = "0.12", default-features = false }
 dirs = "6"

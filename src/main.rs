@@ -14,7 +14,7 @@ mod update;
 mod zsync;
 
 use anyhow::{Context, Result, bail};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use console::style;
 
 pub struct Ctx {
@@ -132,6 +132,13 @@ enum Command {
         #[arg(value_parser = ["enable", "disable", "status"])]
         action: String,
     },
+    /// print a shell completion script
+    #[command(visible_alias = "complete")]
+    Completions {
+        /// shell to generate completions for
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
 }
 
 #[derive(Subcommand)]
@@ -210,6 +217,13 @@ struct PublishCommand {
 async fn main() {
     let cli = Cli::parse();
     ui::set_quiet(cli.quiet);
+    if let Command::Completions { shell } = cli.command {
+        use std::io::Write;
+        let mut script = Vec::new();
+        clap_complete::generate(shell, &mut Cli::command(), "naml", &mut script);
+        let _ = std::io::stdout().write_all(&script);
+        return;
+    }
     if let Err(err) = run(cli).await {
         eprintln!("{} {err:#}", style("error:").red().bold());
         std::process::exit(1);
@@ -516,6 +530,10 @@ async fn run(cli: Cli) -> Result<()> {
         }
 
         Command::Autoupdate { action } => autoupdate(&ctx, &action)?,
+
+        Command::Completions { .. } => {
+            unreachable!("completions are printed before the context is created")
+        }
     }
 
     Ok(())
