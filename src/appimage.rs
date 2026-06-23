@@ -5,6 +5,9 @@ use anyhow::{Context, Result, bail};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
 
+/// section type for uninitialized data (.bss, .tbss), which occupies no space in the file
+const SHT_NOBITS: u32 = 8;
+
 pub struct ElfInfo {
     /// where the ELF runtime ends and the filesystem image starts
     pub payload_offset: u64,
@@ -90,7 +93,12 @@ pub fn elf_info(path: &Path) -> Result<ElfInfo> {
     // same as the AppImage runtime: the payload starts after whichever ends last, the section
     // header table or the last section
     let mut payload_offset = shoff + shentsize * shnum;
-    for &(_, offset, size) in &sections {
+    for (i, &(_, offset, size)) in sections.iter().enumerate() {
+        // .bss and friends have a file offset but take no room in the file, so their size would
+        // push the offset past the start of the squashfs payload
+        if u32_at(&table[i * shentsize as usize..], 4) == SHT_NOBITS {
+            continue;
+        }
         payload_offset = payload_offset.max(offset + size);
     }
 
