@@ -5,10 +5,12 @@ use crate::db::{App, AppSlug};
 use crate::desktop::Desktop;
 use crate::download::{self, Downloaded, Source};
 use crate::format::{self, Format};
+use crate::github;
 use crate::nostr::Package;
 use crate::{appimage, ui};
 use anyhow::{Context, Result, bail};
 use ritualistic::Event;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 pub struct Options {
@@ -60,6 +62,10 @@ impl Origin {
 }
 
 pub async fn install(ctx: &Ctx, target: &str, opts: &Options) -> Result<App> {
+    if let Some(repo) = github::Repo::parse(target) {
+        let origin = github_origin(ctx, &repo, opts).await?;
+        return install_origin(ctx, origin, opts).await;
+    }
     let origin = match Source::parse(target) {
         Some(source) => {
             let (address, url, name) = match &source {
@@ -116,6 +122,44 @@ pub async fn install(ctx: &Ctx, target: &str, opts: &Options) -> Result<App> {
     install_origin(ctx, origin, opts).await
 }
 
+/// the release asset that fits this machine, with what the repository says about itself
+async fn github_origin(ctx: &Ctx, repo: &github::Repo, opts: &Options) -> Result<Origin> {
+    let spinner = ui::spinner(format!("looking at {}/{}", repo.owner, repo.repo));
+    let release = github::release_to_install(&ctx.http, repo).await;
+    let info = github::repo_info(&ctx.http, repo).await.ok().flatten();
+    spinner.finish_and_clear();
+    let release = release?;
+
+    let interactive = !ctx.yes && std::io::stdin().is_terminal() && std::io::stderr().is_terminal();
+    let asset = github::pick(&release.assets, None, interactive)?;
+    ui::step(format!(
+        "{} from {}/{} {}",
+        asset.name, repo.owner, repo.repo, release.tag_name
+    ));
+
+    Ok(Origin {
+        address: repo.address(),
+        pubkey: None,
+        d: opts
+            .id
+            .clone()
+            .unwrap_or_else(|| download::slug_from_filename(&repo.repo)),
+        name: None,
+        summary: info
+            .and_then(|i| i.description)
+            .filter(|d| !d.trim().is_empty()),
+        version: Some(release.version()),
+        icon_url: None,
+        urls: vec![asset.browser_download_url.clone()],
+        expected_sha256: None,
+        format: None,
+        exec: None,
+        update_info: None,
+        event: None,
+        event_created_at: 0,
+    })
+}
+
 async fn install_origin(ctx: &Ctx, origin: Origin, opts: &Options) -> Result<App> {
     if let Some(existing) = ctx.db.apps().by_address(origin.address.clone())? {
         if !opts.force {
@@ -153,6 +197,16 @@ async fn install_origin(ctx: &Ctx, origin: Origin, opts: &Options) -> Result<App
         Some(f) => f,
         None => Format::detect(&dl.path)?,
     };
+    if matches!(format, Format::AppImage | Format::Binary)
+        && let Some(arch) = format::elf_arch(&dl.path)
+        && arch != std::env::consts::ARCH
+    {
+        bail!(
+            "{} is built for {arch}, this is {}",
+            origin.d,
+            std::env::consts::ARCH
+        );
+    }
     let hints = [
         slug.as_str(),
         origin.d.as_str(),

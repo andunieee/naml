@@ -3,17 +3,19 @@
 //! apps that came from nostr follow their event: when the publisher replaces it with one
 //! pointing to a different file, that's the update. AppImages with update information also get
 //! delta downloads through zsync. apps installed straight from a url are updated through their
-//! update information if they have it, otherwise by watching the url for changes.
+//! update information if they have it, otherwise by watching the url for changes. apps installed
+//! from a github repository follow its releases.
 
 use crate::Ctx;
 use crate::db::App;
 use crate::download::{self, Downloaded};
 use crate::format::Format;
+use crate::github;
 use crate::install;
 use crate::nostr::{self, Package};
 use crate::ui;
 use crate::zsync;
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Result, bail};
 use ritualistic::{Event, PubKey};
 
 pub enum Plan {
@@ -25,6 +27,10 @@ pub enum Plan {
         control: Box<zsync::Control>,
     },
     Url,
+    GitHub {
+        url: String,
+        version: String,
+    },
 }
 
 pub struct Available {
@@ -53,6 +59,7 @@ impl Available {
                 self.app.handle(),
                 from
             ),
+            Plan::GitHub { version, .. } => format!("{} {} → {}", self.app.handle(), from, version),
         }
     }
 }
@@ -128,6 +135,19 @@ async fn check_one(
         }
         return Ok(Some(Plan::Zsync {
             control: Box::new(control),
+        }));
+    }
+
+    if let Some(repo) = github::Repo::from_address(&app.address) {
+        let release = github::release_to_install(&ctx.http, &repo).await?;
+        let previous = app.source_url.rsplit('/').next();
+        let asset = github::pick(&release.assets, previous, false)?;
+        if asset.browser_download_url == app.source_url {
+            return Ok(None);
+        }
+        return Ok(Some(Plan::GitHub {
+            url: asset.browser_download_url.clone(),
+            version: release.version(),
         }));
     }
 
@@ -221,6 +241,18 @@ pub async fn apply(ctx: &Ctx, available: Available) -> Result<bool> {
             }
             (dl, None, None)
         }
+        Plan::GitHub { url, .. } => {
+            let dl =
+                download::fetch_any(&ctx.http, std::slice::from_ref(url), None, &scratch, &label)
+                    .await?;
+            if dl.sha256 == app.sha256 {
+                // the same file in a new release
+                app.source_url = url.clone();
+                ctx.db.apps().update(&app)?;
+                return Ok(false);
+            }
+            (dl, None, None)
+        }
     };
 
     let format = match format {
@@ -256,6 +288,11 @@ pub async fn apply(ctx: &Ctx, available: Available) -> Result<bool> {
             if dl.validator.is_some() {
                 app.http_validator = dl.validator.clone();
             }
+        }
+        Plan::GitHub { url, version } => {
+            app.update_info = None;
+            app.source_url = url.clone();
+            app.version = Some(version.clone());
         }
     }
 
@@ -299,109 +336,9 @@ pub async fn resolve_update_info(http: &reqwest::Client, info: &str) -> Result<S
     match parts.as_slice() {
         ["zsync", url] => Ok(url.to_string()),
         ["gh-releases-zsync", owner, repo, tag, pattern] => {
-            github_asset(http, owner, repo, tag, pattern).await
+            crate::github::zsync_url(http, owner, repo, tag, pattern).await
         }
         [kind, ..] => bail!("unsupported update information type {kind}"),
         [] => bail!("empty update information"),
-    }
-}
-
-async fn github_asset(
-    http: &reqwest::Client,
-    owner: &str,
-    repo: &str,
-    tag: &str,
-    pattern: &str,
-) -> Result<String> {
-    #[derive(serde::Deserialize)]
-    struct Release {
-        draft: bool,
-        prerelease: bool,
-        assets: Vec<Asset>,
-    }
-    #[derive(serde::Deserialize)]
-    struct Asset {
-        name: String,
-        browser_download_url: String,
-    }
-
-    let api = format!("https://api.github.com/repos/{owner}/{repo}/releases");
-    let get = |url: String| async move {
-        let response = http
-            .get(&url)
-            .header("Accept", "application/vnd.github+json")
-            .send()
-            .await?;
-        if !response.status().is_success() {
-            bail!("{url} replied with {}", response.status());
-        }
-        Ok(response)
-    };
-
-    let releases: Vec<Release> = match tag {
-        "latest" => vec![get(format!("{api}/latest")).await?.json().await?],
-        "latest-pre" | "latest-all" => {
-            let all: Vec<Release> = get(format!("{api}?per_page=20")).await?.json().await?;
-            all.into_iter()
-                .filter(|r| !r.draft && (tag == "latest-all" || r.prerelease))
-                .take(1)
-                .collect()
-        }
-        tag => vec![get(format!("{api}/tags/{tag}")).await?.json().await?],
-    };
-
-    releases
-        .into_iter()
-        .flat_map(|r| r.assets)
-        .find(|a| glob(pattern, &a.name))
-        .map(|a| a.browser_download_url)
-        .ok_or_else(|| anyhow!("no asset matching {pattern} in {owner}/{repo} {tag}"))
-        .context("resolving gh-releases-zsync")
-}
-
-/// '*' and '?' wildcards
-pub fn glob(pattern: &str, text: &str) -> bool {
-    let p: Vec<char> = pattern.chars().collect();
-    let t: Vec<char> = text.chars().collect();
-    let (mut pi, mut ti) = (0, 0);
-    let (mut star, mut mark) = (None, 0);
-    while ti < t.len() {
-        if pi < p.len() && (p[pi] == '?' || p[pi] == t[ti]) {
-            pi += 1;
-            ti += 1;
-        } else if pi < p.len() && p[pi] == '*' {
-            star = Some(pi);
-            mark = ti;
-            pi += 1;
-        } else if let Some(s) = star {
-            pi = s + 1;
-            mark += 1;
-            ti = mark;
-        } else {
-            return false;
-        }
-    }
-    while pi < p.len() && p[pi] == '*' {
-        pi += 1;
-    }
-    pi == p.len()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::glob;
-
-    #[test]
-    fn globbing() {
-        assert!(glob(
-            "Foo-*-x86_64.AppImage.zsync",
-            "Foo-1.2.3-x86_64.AppImage.zsync"
-        ));
-        assert!(!glob(
-            "Foo-*-x86_64.AppImage.zsync",
-            "Foo-1.2.3-aarch64.AppImage.zsync"
-        ));
-        assert!(glob("*", ""));
-        assert!(glob("a?c", "abc"));
     }
 }

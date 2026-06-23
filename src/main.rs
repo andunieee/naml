@@ -3,6 +3,7 @@ mod db;
 mod desktop;
 mod download;
 mod format;
+mod github;
 mod install;
 mod nostr;
 mod paths;
@@ -47,7 +48,7 @@ enum Command {
     /// install apps from the catalog, a url or a local file
     #[command(visible_alias = "i")]
     Install {
-        /// "d" tag, <author>/<d>, naddr, https:// url or path to a file
+        /// "d" tag, <author>/<d>, naddr, github repository, https:// url or path to a file
         #[arg(required = true)]
         targets: Vec<String>,
         /// a name of your own for the app
