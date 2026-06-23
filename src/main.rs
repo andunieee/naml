@@ -70,7 +70,7 @@ enum Command {
     /// uninstall apps
     #[command(visible_aliases = ["rm", "uninstall"])]
     Remove {
-        #[arg(required = true)]
+        #[arg(required = true, add = clap_complete::engine::ArgValueCompleter::new(complete_installed))]
         apps: Vec<String>,
     },
     /// list installed apps
@@ -213,15 +213,86 @@ struct PublishCommand {
     dry_run: bool,
 }
 
+fn write_completion(shell: clap_complete::Shell) -> Result<()> {
+    use std::io::Write as _;
+
+    let name = shell.to_string();
+    let shells = clap_complete::env::Shells::builtins();
+    let completer = shells
+        .completer(&name)
+        .with_context(|| format!("unsupported shell {name}"))?;
+    let mut script = Vec::new();
+    completer.write_registration("COMPLETE", "naml", "naml", "naml", &mut script)?;
+    std::io::stdout().write_all(&script)?;
+    Ok(())
+}
+
+/// completion candidates for an app argument: the names and ids accepted by
+/// [`resolve::installed`]
+fn complete_installed(
+    current: &std::ffi::OsStr,
+) -> Vec<clap_complete::engine::CompletionCandidate> {
+    use std::collections::{HashMap, HashSet};
+
+    let Ok(paths) = paths::Paths::new() else {
+        return Vec::new();
+    };
+    if !paths.db.exists() {
+        return Vec::new();
+    }
+    let Ok(db) = db::Db::open(&paths.db) else {
+        return Vec::new();
+    };
+    let Ok(apps) = db.apps().all() else {
+        return Vec::new();
+    };
+
+    let current = current.to_string_lossy();
+    // a bare "d" tag only resolves when no other installed app uses it
+    let d_counts = apps.iter().fold(HashMap::new(), |mut counts, app| {
+        *counts.entry(app.d.as_str()).or_insert(0usize) += 1;
+        counts
+    });
+
+    let mut seen = HashSet::new();
+    let mut candidates = Vec::new();
+    for app in &apps {
+        let help = match app.version.as_deref() {
+            Some(version) if !version.is_empty() => format!("{} {version}", app.name),
+            _ => app.name.clone(),
+        };
+        let d = if d_counts.get(app.d.as_str()).copied().unwrap_or(0) > 1 {
+            app.qualified()
+        } else {
+            app.d.clone()
+        };
+        for value in [app.handle().to_string(), app.slug.0.clone(), d] {
+            if value.is_empty()
+                || !value.starts_with(current.as_ref())
+                || !seen.insert(value.clone())
+            {
+                continue;
+            }
+            candidates.push(
+                clap_complete::engine::CompletionCandidate::new(value)
+                    .help(Some(help.clone().into())),
+            );
+        }
+    }
+    candidates.sort_by(|a, b| a.get_value().cmp(b.get_value()));
+    candidates
+}
+
 #[tokio::main]
 async fn main() {
+    clap_complete::CompleteEnv::with_factory(Cli::command).complete();
     let cli = Cli::parse();
     ui::set_quiet(cli.quiet);
     if let Command::Completions { shell } = cli.command {
-        use std::io::Write;
-        let mut script = Vec::new();
-        clap_complete::generate(shell, &mut Cli::command(), "naml", &mut script);
-        let _ = std::io::stdout().write_all(&script);
+        if let Err(err) = write_completion(shell) {
+            eprintln!("{} {err:#}", style("error:").red().bold());
+            std::process::exit(1);
+        }
         return;
     }
     if let Err(err) = run(cli).await {

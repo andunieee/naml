@@ -46,4 +46,6 @@ naml completions fish > ~/.config/fish/completions/naml.fish
 ```
 
 Open a new shell afterwards. Completions cover commands, flags and fixed
-values; app names are not completed dynamically.
+values, and app names/ids are completed dynamically from the installed apps.
+The generated scripts call `naml` again while completing, so keep `naml` on
+your `PATH` and regenerate the script after upgrading `naml`.
