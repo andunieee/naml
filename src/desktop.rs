@@ -39,7 +39,7 @@ impl Desktop {
             let trimmed = line.trim();
             if trimmed.starts_with('[') {
                 if in_main {
-                    out.push(format!("X-Nam-Slug={slug}"));
+                    out.push(format!("X-Naml-Slug={slug}"));
                 }
                 in_main = trimmed == "[Desktop Entry]";
                 out.push(line.clone());
@@ -63,12 +63,12 @@ impl Desktop {
                     Some(icon) => out.push(format!("Icon={icon}")),
                     None => out.push(line.clone()),
                 },
-                "X-Nam-Slug" => {}
+                "X-Naml-Slug" => {}
                 _ => out.push(line.clone()),
             }
         }
         if in_main {
-            out.push(format!("X-Nam-Slug={slug}"));
+            out.push(format!("X-Naml-Slug={slug}"));
         }
         let mut text = out.join("\n");
         text.push('\n');
@@ -93,7 +93,7 @@ impl Desktop {
         if let Some(icon) = icon {
             text.push_str(&format!("Icon={icon}\n"));
         }
-        text.push_str(&format!("X-Nam-Slug={slug}\n"));
+        text.push_str(&format!("X-Naml-Slug={slug}\n"));
         text
     }
 }
@@ -151,7 +151,7 @@ mod tests {
         assert!(out.contains("Icon=/icons/foo.png\n"));
         assert!(out.contains("TryExec=/home/u/apps/foo/Foo.AppImage\n"));
         assert!(out.contains("Exec=/home/u/apps/foo/Foo.AppImage --new\n"));
-        assert_eq!(out.matches("X-Nam-Slug=foo").count(), 1);
+        assert_eq!(out.matches("X-Naml-Slug=foo").count(), 1);
         assert_eq!(d.get("Name").as_deref(), Some("Foo"));
     }
 

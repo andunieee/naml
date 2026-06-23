@@ -1,5 +1,5 @@
 [package]
-name = "nam"
+name = "naml"
 version = "0.1.0"
 edition = "2024"
 description = "nostr app manager: install, update and integrate portable linux apps (AppImages, static binaries, archives) discovered over nostr"

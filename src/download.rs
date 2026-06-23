@@ -40,7 +40,7 @@ impl Source {
 
 pub fn client() -> reqwest::Client {
     reqwest::Client::builder()
-        .user_agent(concat!("nam/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("naml/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(std::time::Duration::from_secs(20))
         .build()
         .expect("http client")

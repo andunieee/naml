@@ -15,7 +15,7 @@
 //! the content is a free-form description.
 //!
 //! users recommend apps with a kind 10284 list of "a" tags (NIP-51 style) and relays with a
-//! NIP-51 relay set (kind 30002) whose "d" tag is "nam".
+//! NIP-51 relay set (kind 30002) whose "d" tag is "naml".
 
 use crate::Ctx;
 use crate::db::{self, Listing, ListingAddress};
@@ -30,7 +30,7 @@ use std::time::Duration;
 pub const APP: Kind = Kind(32284);
 pub const RECOMMENDED_APPS: Kind = Kind(10284);
 pub const RELAY_SET: Kind = Kind(30002);
-pub const RELAY_SET_D: &str = "nam";
+pub const RELAY_SET_D: &str = "naml";
 pub const CONTACTS: Kind = Kind(3);
 
 pub const DEFAULT_RELAYS: &[&str] = &[
@@ -195,7 +195,7 @@ pub async fn fetch(net: &Network, relays: &[String], filter: Filter) -> Vec<Even
         .subscribe(relays, filter, {
             // skip_ids is private, so no struct update syntax
             let mut opts = SubscriptionOptions::default();
-            opts.label = Some("nam".into());
+            opts.label = Some("naml".into());
             opts
         })
         .await;
@@ -502,11 +502,11 @@ pub fn app_coordinate(pubkey_hex: &str, d: &str) -> String {
 
 pub async fn signer(ctx: &Ctx) -> Result<Finalizer> {
     // for CI, where nothing should be stored
-    if let Ok(secret) = std::env::var("NAM_SECRET_KEY") {
+    if let Ok(secret) = std::env::var("NAML_SECRET_KEY") {
         let sk: SecretKey = secret
             .trim()
             .parse()
-            .map_err(|e| anyhow!("NAM_SECRET_KEY is invalid: {e}"))?;
+            .map_err(|e| anyhow!("NAML_SECRET_KEY is invalid: {e}"))?;
         return Ok(Finalizer::Plain(sk));
     }
     if let Some(secret) = db::get_setting(&ctx.db, "secret")? {
@@ -540,7 +540,7 @@ pub async fn signer(ctx: &Ctx) -> Result<Finalizer> {
         );
         return Ok(Finalizer::Bunker(bunker));
     }
-    bail!("you need to `nam login` with a secret key or a bunker to publish")
+    bail!("you need to `naml login` with a secret key or a bunker to publish")
 }
 
 /// sets up the identity used for discovery and publishing

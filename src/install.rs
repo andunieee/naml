@@ -164,7 +164,7 @@ async fn install_origin(ctx: &Ctx, origin: Origin, opts: &Options) -> Result<App
     if let Some(existing) = ctx.db.apps().by_address(origin.address.clone())? {
         if !opts.force {
             bail!(
-                "{} is already installed as {}, use `nam update {}` (or --force to reinstall)",
+                "{} is already installed as {}, use `naml update {}` (or --force to reinstall)",
                 origin.d,
                 existing.handle(),
                 existing.handle()
@@ -468,7 +468,7 @@ pub async fn integrate(
             None => None,
         };
         if let Some(entry) = entry {
-            let path = ctx.paths.applications.join(format!("nam-{slug}.desktop"));
+            let path = ctx.paths.applications.join(format!("naml-{slug}.desktop"));
             std::fs::write(&path, entry)?;
             app.desktop_file = Some(path.to_string_lossy().into_owned());
             refresh_desktop_database(ctx);

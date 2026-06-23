@@ -401,7 +401,7 @@ mod tests {
     }
 
     fn tempdir() -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("nam-zsync-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("naml-zsync-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }

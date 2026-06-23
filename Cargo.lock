@@ -1311,7 +1311,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nam"
+name = "naml"
 version = "0.1.0"
 dependencies = [
  "anyhow",

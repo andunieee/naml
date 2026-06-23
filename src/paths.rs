@@ -17,7 +17,7 @@ impl Paths {
     pub fn new() -> Result<Self> {
         let home = dirs::home_dir().context("can't find the home directory")?;
         let share = dirs::data_dir().unwrap_or_else(|| home.join(".local/share"));
-        let data = share.join("nam");
+        let data = share.join("naml");
         let config = dirs::config_dir().unwrap_or_else(|| home.join(".config"));
 
         let paths = Self {
@@ -25,7 +25,7 @@ impl Paths {
             previous: data.join("previous"),
             icons: data.join("icons"),
             tmp: data.join("tmp"),
-            db: data.join("nam.redb"),
+            db: data.join("naml.redb"),
             applications: share.join("applications"),
             bin: dirs::executable_dir().unwrap_or_else(|| home.join(".local/bin")),
             systemd_user: config.join("systemd/user"),

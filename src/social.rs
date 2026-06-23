@@ -118,7 +118,7 @@ pub fn remove_relay(ctx: &Ctx, url: &str) -> Result<bool> {
 pub async fn publish_relays(ctx: &Ctx) -> Result<usize> {
     let relays = ctx.db.user_relays().all()?;
     if relays.is_empty() {
-        bail!("add some relays first with `nam relays add <url>`");
+        bail!("add some relays first with `naml relays add <url>`");
     }
     let mut tags = vec![
         vec!["d".to_string(), nostr::RELAY_SET_D.to_string()],
@@ -262,7 +262,7 @@ pub async fn publish_app(ctx: &Ctx, args: PublishArgs) -> Result<()> {
     }
     let event = nostr::publish(ctx, template).await?;
     ui::success(format!(
-        "{} is out, install it with: nam install {}/{}",
+        "{} is out, install it with: naml install {}/{}",
         pkg.d,
         event.pubkey.to_npub(),
         pkg.d

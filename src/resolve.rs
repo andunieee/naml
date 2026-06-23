@@ -73,7 +73,7 @@ pub async fn installed(ctx: &Ctx, input: &str) -> Result<App> {
             }
             let matches: Vec<&App> = apps.iter().filter(|a| a.d == name).collect();
             match matches.as_slice() {
-                [] => bail!("no installed app is called {name} (see `nam list`)"),
+                [] => bail!("no installed app is called {name} (see `naml list`)"),
                 [one] => Ok((*one).clone()),
                 many => bail!(
                     "{name} is ambiguous, it could be any of:\n{}",
@@ -108,7 +108,7 @@ pub async fn listing(ctx: &Ctx, input: &str) -> Result<(Package, Event)> {
                 .filter(|l| l.d == d)
                 .collect();
             match matches.as_slice() {
-                [] => bail!("no app called {d} is known; try `nam search {d}` or `nam sync`"),
+                [] => bail!("no app called {d} is known; try `naml search {d}` or `naml sync`"),
                 [one] => nostr::listing_package(one),
                 many => {
                     let mut many = many.to_vec();

@@ -27,7 +27,7 @@ pub struct Ctx {
 
 #[derive(Parser)]
 #[command(
-    name = "nam",
+    name = "naml",
     version,
     about = "install, update and integrate portable linux apps found over nostr",
     after_help = "apps can be referred to by name, by \"d\" tag, or as <npub|nip05|hex>/<d> when the \"d\" tag is ambiguous"
@@ -220,7 +220,7 @@ async fn run(cli: Cli) -> Result<()> {
     let paths = paths::Paths::new()?;
     let db = db::Db::open(&paths.db).with_context(|| {
         format!(
-            "can't open {} (is another nam running?)",
+            "can't open {} (is another naml running?)",
             paths.db.display()
         )
     })?;
@@ -288,7 +288,7 @@ async fn run(cli: Cli) -> Result<()> {
         Command::List => {
             let apps = ctx.db.apps().all()?;
             if apps.is_empty() {
-                ui::step("nothing installed yet, try `nam search`");
+                ui::step("nothing installed yet, try `naml search`");
             }
             for app in apps {
                 let flags = [
@@ -379,7 +379,7 @@ async fn run(cli: Cli) -> Result<()> {
             let mut app = resolve::installed(&ctx, &app).await?;
             install::rollback(&ctx, &mut app).await?;
             ui::success(format!(
-                "{} is back at {} (`nam lock {}` keeps it there)",
+                "{} is back at {} (`naml lock {}` keeps it there)",
                 app.handle(),
                 app.version.as_deref().unwrap_or("the previous version"),
                 app.handle()
@@ -421,7 +421,7 @@ async fn run(cli: Cli) -> Result<()> {
             let pk = nostr::login(&ctx, &key).await?;
             let (_, how) = social::whoami(&ctx)?.unwrap_or_default();
             ui::success(format!("logged in as {} ({how})", pk.to_npub()));
-            ui::step("your follows' recommendations will show up after `nam sync`");
+            ui::step("your follows' recommendations will show up after `naml sync`");
         }
 
         Command::Logout => {
@@ -449,7 +449,7 @@ async fn run(cli: Cli) -> Result<()> {
                     _ => resolve::listing(&ctx, &app).await?.0.address(),
                 };
                 social::set_recommendation(&ctx, &address, true)?;
-                ui::success("added, `nam recommend publish` to share it");
+                ui::success("added, `naml recommend publish` to share it");
             }
             RecommendCommand::Remove { app } => {
                 let address = match resolve::installed(&ctx, &app).await {
@@ -457,7 +457,7 @@ async fn run(cli: Cli) -> Result<()> {
                     Err(_) => resolve::listing(&ctx, &app).await?.0.address(),
                 };
                 social::set_recommendation(&ctx, &address, false)?;
-                ui::success("removed, `nam recommend publish` to share it");
+                ui::success("removed, `naml recommend publish` to share it");
             }
             RecommendCommand::Publish => {
                 let n = social::publish_recommendations(&ctx).await?;
@@ -752,8 +752,8 @@ fn search(ctx: &Ctx, query: &str, only_recommended: bool) -> Result<()> {
 
 fn autoupdate(ctx: &Ctx, action: &str) -> Result<()> {
     let dir = &ctx.paths.systemd_user;
-    let service = dir.join("nam-update.service");
-    let timer = dir.join("nam-update.timer");
+    let service = dir.join("naml-update.service");
+    let timer = dir.join("naml-update.timer");
     let systemctl = |args: &[&str]| -> Result<()> {
         let status = std::process::Command::new("systemctl")
             .arg("--user")
@@ -773,27 +773,27 @@ fn autoupdate(ctx: &Ctx, action: &str) -> Result<()> {
             std::fs::write(
                 &service,
                 format!(
-                    "[Unit]\nDescription=update apps installed with nam\nWants=network-online.target\nAfter=network-online.target\n\n[Service]\nType=oneshot\nExecStart=\"{}\" update --yes --quiet\n",
+                    "[Unit]\nDescription=update apps installed with naml\nWants=network-online.target\nAfter=network-online.target\n\n[Service]\nType=oneshot\nExecStart=\"{}\" update --yes --quiet\n",
                     exe.display()
                 ),
             )?;
             std::fs::write(
                 &timer,
-                "[Unit]\nDescription=update apps installed with nam\n\n[Timer]\nOnBootSec=10min\nOnUnitActiveSec=12h\nRandomizedDelaySec=30min\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n",
+                "[Unit]\nDescription=update apps installed with naml\n\n[Timer]\nOnBootSec=10min\nOnUnitActiveSec=12h\nRandomizedDelaySec=30min\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n",
             )?;
             systemctl(&["daemon-reload"])?;
-            systemctl(&["enable", "--now", "nam-update.timer"])?;
+            systemctl(&["enable", "--now", "naml-update.timer"])?;
             ui::success("apps will be updated twice a day");
         }
         "disable" => {
-            let _ = systemctl(&["disable", "--now", "nam-update.timer"]);
+            let _ = systemctl(&["disable", "--now", "naml-update.timer"]);
             let _ = std::fs::remove_file(&service);
             let _ = std::fs::remove_file(&timer);
             let _ = systemctl(&["daemon-reload"]);
             ui::success("automatic updates are off");
         }
         _ => {
-            let _ = systemctl(&["status", "--no-pager", "nam-update.timer"]);
+            let _ = systemctl(&["status", "--no-pager", "naml-update.timer"]);
         }
     }
     Ok(())
