@@ -33,7 +33,10 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      - uses: mlugg/setup-zig@v1
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: "0.17.1"
+          cache-key: ${{ matrix.target }}
 
       - uses: taiki-e/install-action@v2
         with:
