@@ -93,9 +93,9 @@ pub async fn publish_recommendations(ctx: &Ctx) -> Result<usize> {
 }
 
 pub fn add_relay(ctx: &Ctx, url: &str) -> Result<String> {
-    let url = ritualistic::normalize_url(url).map_err(|e| anyhow!("invalid relay url: {e}"))?;
+    let url = ritualistic::normalize_url(url).map_err(|e| anyhow!("invalid server url: {e}"))?;
     if !matches!(url.scheme(), "ws" | "wss") {
-        bail!("relay urls start with wss://");
+        bail!("server urls start with wss://");
     }
     ctx.db.user_relays().upsert(&UserRelay {
         url: UserRelayUrl::new(url.to_string()),
@@ -118,7 +118,7 @@ pub fn remove_relay(ctx: &Ctx, url: &str) -> Result<bool> {
 pub async fn publish_relays(ctx: &Ctx) -> Result<usize> {
     let relays = ctx.db.user_relays().all()?;
     if relays.is_empty() {
-        bail!("add some relays first with `naml relays add <url>`");
+        bail!("add some catalog servers first with `naml servers add <url>`");
     }
     let mut tags = vec![
         vec!["d".to_string(), nostr::RELAY_SET_D.to_string()],

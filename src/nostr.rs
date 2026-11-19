@@ -259,7 +259,7 @@ pub struct SyncReport {
 
 /// refresh the local catalog of apps from relays and from the lists of the people we follow
 pub async fn sync(ctx: &Ctx) -> Result<SyncReport> {
-    let spinner = crate::ui::spinner("looking for apps on relays");
+    let spinner = crate::ui::spinner("looking for apps on catalog servers");
     let mut relays = base_relays(ctx)?;
     let me = my_pubkey(ctx)?;
 
@@ -341,7 +341,7 @@ pub async fn sync(ctx: &Ctx) -> Result<SyncReport> {
     }
 
     // the apps themselves: everything relays have, plus specifically the recommended ones
-    spinner.set_message(format!("fetching apps from {} relays", relays.len()));
+    spinner.set_message(format!("fetching apps from {} catalog servers", relays.len()));
     let mut events = fetch(
         &ctx.net,
         &relays,
@@ -636,7 +636,7 @@ pub async fn publish(ctx: &Ctx, template: EventTemplate) -> Result<Event> {
         }
     }
     if ok == 0 {
-        bail!("no relay accepted the event");
+        bail!("no catalog server accepted the announcement");
     }
     Ok(event)
 }

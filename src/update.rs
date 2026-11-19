@@ -121,7 +121,7 @@ async fn check_one(
         }
         // the event isn't on our relays anymore; embedded update information may still work
         if app.update_info.is_none() {
-            bail!("couldn't find {} on relays", app.qualified());
+            bail!("couldn't find {} on any update server", app.qualified());
         }
     }
 

@@ -1,6 +1,44 @@
 # naml
 
-nostr app manager for linux
+AppImages installer updater and manager for Linux.
+
+## what it does
+
+- **Installs and integrates apps.** AppImages, static binaries and archives
+  (tar.*, zip) are installed under your home directory, no root needed. Each
+  graphical app gets an entry in the applications menu (also called the
+  application launcher, or in freedesktop terms a *desktop entry*), plus its
+  icon, and a command in `~/.local/bin`. Use `--no-desktop` / `--no-bin` to skip
+  either one.
+- **Updates apps**, including through the
+  [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate)
+  protocol: the update information embedded in an AppImage (`zsync|...` and
+  `gh-releases-zsync|owner|repo|tag|pattern`, with the `latest`, `latest-pre`
+  and `latest-all` tags) is honored, and only the changed blocks are downloaded
+  using zsync delta transfers.
+- **Reads AppImages without running them**: metadata, the `.desktop` file and
+  the `.DirIcon` icon are extracted straight from the squashfs payload.
+- **Rolls back** to the previous version, locks apps at a version, and can
+  update in the background with a systemd user timer.
+
+### how the menu integration works
+
+It follows the freedesktop.org
+[Desktop Entry Specification](https://specifications.freedesktop.org/desktop-entry-spec/latest/).
+For each app, naml writes `~/.local/share/applications/naml-<id>.desktop`
+(the `.desktop` file shipped in the AppImage, rewritten so `Exec=` and `Icon=`
+point at the installed files, or a minimal generated one), copies the icon
+into naml's data directory, and runs `update-desktop-database` so the desktop
+environment picks it up. Removing the app removes those files.
+
+## publishing your app
+
+Maintainers can announce releases automatically from CI with the GitHub
+Action in this repository; see
+[docs/publish-from-github-actions.md](docs/publish-from-github-actions.md)
+(written to be read by coding agents). To build AppImages with a proper
+desktop entry and update information in the first place, see
+[docs/build-appimages.md](docs/build-appimages.md).
 
 ## installation
 

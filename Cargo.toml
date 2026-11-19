@@ -2,7 +2,7 @@
 name = "naml"
 version = "0.1.0"
 edition = "2024"
-description = "nostr app manager: install, update and integrate portable linux apps (AppImages, static binaries, archives) discovered over nostr"
+description = "install, update and integrate portable linux apps (AppImages, static binaries, archives)"
 license = "MIT OR Apache-2.0"
 
 [dependencies]

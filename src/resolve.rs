@@ -151,7 +151,7 @@ pub async fn listing(ctx: &Ctx, input: &str) -> Result<(Package, Event)> {
                 return nostr::listing_package(&listing);
             }
             bail!(
-                "couldn't find {d} by {} on any relay",
+                "couldn't find {d} by {} on any update server",
                 crate::ui::npub(&pk.to_hex())
             )
         }

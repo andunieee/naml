@@ -29,7 +29,7 @@ pub struct Ctx {
 #[command(
     name = "naml",
     version,
-    about = "install, update and integrate portable linux apps found over nostr",
+    about = "install, update and integrate portable linux apps",
     after_help = "apps can be referred to by name, by \"d\" tag, or as <npub|nip05|hex>/<d> when the \"d\" tag is ambiguous"
 )]
 struct Cli {
@@ -86,7 +86,7 @@ enum Command {
         #[arg(short, long)]
         recommended: bool,
     },
-    /// refresh the catalog from relays and recommendations
+    /// refresh the catalog from the catalog servers and recommendations
     Sync,
     /// update apps (all of them by default)
     #[command(visible_aliases = ["up", "upgrade"])]
@@ -122,10 +122,10 @@ enum Command {
     /// manage and publish the apps you recommend
     #[command(subcommand)]
     Recommend(RecommendCommand),
-    /// manage and publish the relays you use for apps
+    /// manage and publish the catalog servers you use for apps
     #[command(subcommand)]
-    Relays(RelaysCommand),
-    /// announce an app on nostr
+    Servers(RelaysCommand),
+    /// announce an app in the catalog
     Publish(Box<PublishCommand>),
     /// update apps in the background with a systemd user timer
     Autoupdate {
@@ -162,7 +162,7 @@ enum RelaysCommand {
     Remove {
         url: String,
     },
-    /// publish your relays as a NIP-51 relay set
+    /// publish your catalog servers
     Publish,
 }
 
@@ -410,7 +410,7 @@ async fn run(cli: Cli) -> Result<()> {
         Command::Sync => {
             let report = nostr::sync(&ctx).await?;
             ui::success(format!(
-                "{} apps from {} relays, {} recommended by the {} people you follow",
+                "{} apps from {} catalog servers, {} recommended by the {} people you follow",
                 report.apps, report.relays, report.recommended, report.follows
             ));
         }
@@ -550,7 +550,7 @@ async fn run(cli: Cli) -> Result<()> {
             }
         },
 
-        Command::Relays(cmd) => match cmd {
+        Command::Servers(cmd) => match cmd {
             RelaysCommand::List => {
                 for relay in nostr::DEFAULT_RELAYS {
                     println!("{relay} {}", style("(default)").dim());
@@ -565,13 +565,13 @@ async fn run(cli: Cli) -> Result<()> {
             }
             RelaysCommand::Remove { url } => {
                 if !social::remove_relay(&ctx, &url)? {
-                    bail!("{url} isn't one of your relays");
+                    bail!("{url} isn't one of your catalog servers");
                 }
                 ui::success(format!("removed {url}"));
             }
             RelaysCommand::Publish => {
                 let n = social::publish_relays(&ctx).await?;
-                ui::success(format!("published {n} relays"));
+                ui::success(format!("published {n} catalog servers"));
             }
         },
 

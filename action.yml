@@ -1,0 +1,134 @@
+name: publish to naml
+description: announce a portable linux app (AppImage, static binary or archive) in the naml catalog
+
+branding:
+  icon: upload-cloud
+  color: purple
+
+inputs:
+  secret-key:
+    description: an nsec or a bunker:// url for the identity that publishes the app; store it as a repository secret
+    required: true
+  urls:
+    description: urls the app can be downloaded from, one per line, mirrors after the first
+    required: true
+  file:
+    description: local file to hash instead of downloading the first url (use it when the release isn't uploaded yet)
+    required: false
+  id:
+    description: stable identifier of the app, keep it the same across releases
+    required: false
+  name:
+    required: false
+  summary:
+    required: false
+  description:
+    required: false
+  app-version:
+    required: false
+  icon:
+    description: url of an icon
+    required: false
+  web:
+    description: homepage
+    required: false
+  license:
+    required: false
+  format:
+    description: appimage, binary, tar.gz, tar.xz, tar.zst, tar.bz2, tar or zip (detected by default)
+    required: false
+  exec:
+    description: for archives, the path of the executable inside it
+    required: false
+  update:
+    description: AppImageUpdate update information (read from the AppImage by default)
+    required: false
+  arch:
+    description: supported architectures, one per line (detected from the file by default)
+    required: false
+  tags:
+    description: categories or keywords, one per line
+    required: false
+  dry-run:
+    description: print the announcement without publishing it
+    required: false
+    default: "false"
+  naml-version:
+    description: naml release to use, a tag like v0.1.0 or "latest"
+    required: false
+    default: latest
+
+runs:
+  using: composite
+  steps:
+    - name: install naml
+      shell: bash
+      env:
+        NAML_VERSION: ${{ inputs.naml-version }}
+      run: |
+        case "$(uname -m)" in
+          x86_64) target=x86_64-unknown-linux-musl ;;
+          aarch64|arm64) target=aarch64-unknown-linux-musl ;;
+          *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+        esac
+        if [ "$NAML_VERSION" = latest ]; then
+          path=latest/download
+        else
+          path="download/$NAML_VERSION"
+        fi
+        mkdir -p "$RUNNER_TEMP/naml-bin"
+        curl -fsSL "https://github.com/andunieee/naml/releases/$path/naml-$target" \
+          -o "$RUNNER_TEMP/naml-bin/naml"
+        chmod +x "$RUNNER_TEMP/naml-bin/naml"
+        echo "$RUNNER_TEMP/naml-bin" >> "$GITHUB_PATH"
+
+    - name: publish
+      shell: bash
+      env:
+        NAML_SECRET_KEY: ${{ inputs.secret-key }}
+        IN_URLS: ${{ inputs.urls }}
+        IN_FILE: ${{ inputs.file }}
+        IN_ID: ${{ inputs.id }}
+        IN_NAME: ${{ inputs.name }}
+        IN_SUMMARY: ${{ inputs.summary }}
+        IN_DESCRIPTION: ${{ inputs.description }}
+        IN_VERSION: ${{ inputs.app-version }}
+        IN_ICON: ${{ inputs.icon }}
+        IN_WEB: ${{ inputs.web }}
+        IN_LICENSE: ${{ inputs.license }}
+        IN_FORMAT: ${{ inputs.format }}
+        IN_EXEC: ${{ inputs.exec }}
+        IN_UPDATE: ${{ inputs.update }}
+        IN_ARCH: ${{ inputs.arch }}
+        IN_TAGS: ${{ inputs.tags }}
+        IN_DRY_RUN: ${{ inputs.dry-run }}
+      run: |
+        set -euo pipefail
+        echo "::add-mask::$NAML_SECRET_KEY"
+
+        args=()
+        opt() { [ -z "$2" ] || args+=("$1" "$2"); }
+        opt --file "$IN_FILE"
+        opt --id "$IN_ID"
+        opt --name "$IN_NAME"
+        opt --summary "$IN_SUMMARY"
+        opt --description "$IN_DESCRIPTION"
+        opt --app-version "$IN_VERSION"
+        opt --icon "$IN_ICON"
+        opt --web "$IN_WEB"
+        opt --license "$IN_LICENSE"
+        opt --format "$IN_FORMAT"
+        opt --exec "$IN_EXEC"
+        opt --update "$IN_UPDATE"
+        while IFS= read -r line; do opt --arch "${line//[[:space:]]/}"; done <<< "$IN_ARCH"
+        while IFS= read -r line; do opt --tag "${line//[[:space:]]/}"; done <<< "$IN_TAGS"
+        [ "$IN_DRY_RUN" != true ] || args+=(--dry-run)
+
+        urls=()
+        while IFS= read -r line; do
+          line="${line//[[:space:]]/}"
+          [ -z "$line" ] || urls+=("$line")
+        done <<< "$IN_URLS"
+
+        naml --yes login "$NAML_SECRET_KEY"
+        naml --yes publish "${args[@]}" "${urls[@]}"
