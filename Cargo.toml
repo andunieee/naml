@@ -9,29 +9,29 @@ license = "MIT OR Apache-2.0"
 anyhow = "1"
 backhand = { version = "0.25", default-features = false, features = ["xz", "gzip", "zstd"] }
 bzip2 = "0.6"
-clap = { version = "4.5", features = ["derive"] }
-clap_complete = { version = "4.5", features = ["unstable-dynamic"] }
+clap = { version = "4.6", features = ["derive"] }
+clap_complete = { version = "4.6", features = ["unstable-dynamic"] }
 console = "0.16"
 dialoguer = { version = "0.12", default-features = false }
-dirs = "6"
+dirs = "7"
 flate2 = "1"
 futures-util = "0.3"
 hex = "0.4"
 indicatif = "0.18"
-md4 = "0.10"
-orangedb = "0.2.0"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
+md4 = "0.11"
+orangedb = "0.3.0"
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "stream", "json"] }
 ritualistic = { version = "0.2.4", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha1 = "0.10"
-sha2 = "0.10"
+sha1 = "0.11"
+sha2 = "0.11"
 tar = "0.4"
 tokio = { version = "1", features = ["full"] }
 url = "2"
 liblzma = "0.4"
-zip = { version = "2", default-features = false, features = ["deflate"] }
-zstd = "0.13"
+zip = { version = "9", default-features = false, features = ["deflate"] }
+zstd = "0.14"
 
 [profile.release]
 lto = "thin"

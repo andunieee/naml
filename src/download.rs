@@ -193,18 +193,29 @@ fn filename_of(response: &reqwest::Response) -> Option<String> {
 }
 
 pub fn sha256_file(path: &Path) -> Result<String> {
-    let mut file = std::fs::File::open(path)?;
     let mut hasher = Sha256::new();
-    std::io::copy(&mut file, &mut hasher)?;
+    hash_into(path, &mut hasher)?;
     Ok(hex::encode(hasher.finalize()))
 }
 
 pub fn sha1_file(path: &Path) -> Result<String> {
     use sha1::Sha1;
-    let mut file = std::fs::File::open(path)?;
     let mut hasher = Sha1::new();
-    std::io::copy(&mut file, &mut hasher)?;
+    hash_into(path, &mut hasher)?;
     Ok(hex::encode(hasher.finalize()))
+}
+
+fn hash_into<D: Digest>(path: &Path, hasher: &mut D) -> Result<()> {
+    let mut file = std::fs::File::open(path)?;
+    let mut buf = vec![0u8; 1 << 16];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(())
 }
 
 /// a stable identifier out of a file name: "Obsidian-1.5.3-x86_64.AppImage" -> "obsidian"
