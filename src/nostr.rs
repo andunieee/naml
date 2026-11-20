@@ -150,10 +150,6 @@ impl Package {
         for t in &self.topics {
             tags.push(vec!["t".into(), t.to_lowercase()]);
         }
-        if let Some(summary) = &self.summary {
-            // NIP-31, so clients that don't know this kind can say something about it
-            tags.push(vec!["alt".into(), format!("portable linux app: {summary}")]);
-        }
 
         EventTemplate {
             created_at: Timestamp::now(),
