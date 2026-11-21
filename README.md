@@ -31,6 +31,25 @@ point at the installed files, or a minimal generated one), copies the icon
 into naml's data directory, and runs `update-desktop-database` so the desktop
 environment picks it up. Removing the app removes those files.
 
+### installing for everyone
+
+Add `--system` (or `--global`) to any command to work on the apps installed
+for every user of the machine instead of just your own. naml asks for root
+with `sudo` (or `doas`) by itself.
+
+```sh
+naml --system install https://telegram.org/dl/desktop/linux
+naml --system list
+naml --system autoupdate enable   # a system timer that updates them as root
+```
+
+These apps live in `/opt/naml`, their database in `/var/lib/naml`, their
+commands in `/usr/local/bin` and their launchers in
+`/usr/local/share/applications`. An app you also install for yourself takes
+precedence over the system one. `naml --system run <app>` runs the app as
+you, not as root. The system timer only runs a naml binary that only root
+can change, so put naml in `/usr/local/bin` before you enable it.
+
 ### ids and authors
 
 Every app has an id and an author, written `<author>/<id>`. For apps from the

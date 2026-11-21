@@ -1483,6 +1483,7 @@ dependencies = [
  "futures-util",
  "hex",
  "indicatif",
+ "libc",
  "liblzma",
  "md4",
  "orangedb",

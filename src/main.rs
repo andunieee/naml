@@ -40,6 +40,9 @@ struct Cli {
     /// only print errors
     #[arg(short, long, global = true)]
     quiet: bool,
+    /// work on the apps installed for every user of this machine (asks for root with sudo)
+    #[arg(long, visible_alias = "global", global = true)]
+    system: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -142,7 +145,7 @@ enum Command {
     Servers(RelaysCommand),
     /// announce an app in the catalog
     Publish(Box<PublishCommand>),
-    /// update apps in the background with a systemd user timer
+    /// update apps in the background with a systemd timer
     Autoupdate {
         #[arg(value_parser = ["enable", "disable", "status"])]
         action: String,
@@ -301,7 +304,7 @@ fn complete_installed(
 ) -> Vec<clap_complete::engine::CompletionCandidate> {
     use std::collections::{HashMap, HashSet};
 
-    let Ok(paths) = paths::Paths::new() else {
+    let Ok(paths) = paths::Paths::new(false) else {
         return Vec::new();
     };
     if !paths.db.exists() {
@@ -362,14 +365,60 @@ async fn main() {
         }
         return;
     }
+    if cli.system
+        && !is_root()
+        && let Err(err) = without_root(&cli)
+    {
+        eprintln!("{} {err:#}", style("error:").red().bold());
+        std::process::exit(1);
+    }
     if let Err(err) = run(cli).await {
         eprintln!("{} {err:#}", style("error:").red().bold());
         std::process::exit(1);
     }
 }
 
+fn is_root() -> bool {
+    // SAFETY: geteuid has no preconditions and can't fail
+    unsafe { libc::geteuid() == 0 }
+}
+
+/// --system without being root: apps installed for everyone are run as the user, through their
+/// command, and everything else starts over with sudo (or doas), as only root can change them
+fn without_root(cli: &Cli) -> Result<()> {
+    use std::os::unix::process::CommandExt;
+
+    if let Command::Run { app, args } = &cli.command {
+        let Some(command) = paths::Paths::system_command(app) else {
+            bail!("no app installed for everyone has the command {app} (see `naml --system list`)");
+        };
+        let err = std::process::Command::new(&command).args(args).exec();
+        bail!("failed to run {}: {err}", command.display());
+    }
+
+    let exe = std::env::current_exe().context("can't find naml itself")?;
+    let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    for helper in ["sudo", "doas"] {
+        let err = std::process::Command::new(helper)
+            .arg(&exe)
+            .args(&args)
+            .exec();
+        if err.kind() != std::io::ErrorKind::NotFound {
+            bail!("failed to run {helper}: {err}");
+        }
+    }
+    bail!(
+        "apps for everyone are managed as root, and neither sudo nor doas is here; run naml as root"
+    )
+}
+
 async fn run(cli: Cli) -> Result<()> {
-    let paths = paths::Paths::new()?;
+    if cli.system {
+        // what we install has to be readable by everyone, whatever root's umask is
+        // SAFETY: umask only swaps the process' file mode mask
+        unsafe { libc::umask(0o022) };
+    }
+    let paths = paths::Paths::new(cli.system)?;
     let db = db::Db::open(&paths.db).with_context(|| {
         format!(
             "can't open {} (is another naml running?)",
@@ -973,18 +1022,38 @@ fn search(ctx: &Ctx, query: &str, only_recommended: bool) -> Result<()> {
     Ok(())
 }
 
+/// the system timer runs naml as root, so nobody else may be able to replace it
+fn only_root_can_change(exe: &std::path::Path) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    for path in exe.ancestors() {
+        let Ok(meta) = std::fs::metadata(path) else {
+            continue;
+        };
+        if meta.uid() != 0 || meta.mode() & 0o022 != 0 {
+            bail!(
+                "{} could be changed by someone other than root, so it can't update apps as root; \
+                 put naml somewhere like /usr/local/bin first",
+                exe.display()
+            );
+        }
+    }
+    Ok(())
+}
+
 fn autoupdate(ctx: &Ctx, action: &str) -> Result<()> {
-    let dir = &ctx.paths.systemd_user;
+    let dir = &ctx.paths.systemd;
+    let system = ctx.paths.system;
     let service = dir.join("naml-update.service");
     let timer = dir.join("naml-update.timer");
     let systemctl = |args: &[&str]| -> Result<()> {
+        let scope = if system { "--system" } else { "--user" };
         let status = std::process::Command::new("systemctl")
-            .arg("--user")
+            .arg(scope)
             .args(args)
             .status()
             .context("failed to run systemctl")?;
         if !status.success() {
-            bail!("systemctl --user {} failed", args.join(" "));
+            bail!("systemctl {scope} {} failed", args.join(" "));
         }
         Ok(())
     };
@@ -993,11 +1062,15 @@ fn autoupdate(ctx: &Ctx, action: &str) -> Result<()> {
         "enable" => {
             std::fs::create_dir_all(dir)?;
             let exe = std::env::current_exe()?;
+            if system {
+                only_root_can_change(&exe)?;
+            }
             std::fs::write(
                 &service,
                 format!(
-                    "[Unit]\nDescription=update apps installed with naml\nWants=network-online.target\nAfter=network-online.target\n\n[Service]\nType=oneshot\nExecStart=\"{}\" update --yes --quiet\n",
-                    exe.display()
+                    "[Unit]\nDescription=update apps installed with naml\nWants=network-online.target\nAfter=network-online.target\n\n[Service]\nType=oneshot\nExecStart=\"{}\"{} update --yes --quiet\n",
+                    exe.display(),
+                    if system { " --system" } else { "" }
                 ),
             )?;
             std::fs::write(
