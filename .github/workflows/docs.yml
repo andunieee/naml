@@ -9,18 +9,21 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
 
+# one deployment at a time, and don't cancel one halfway
 concurrency:
-  group: docs
-  cancel-in-progress: true
+  group: pages
+  cancel-in-progress: false
 
 env:
   # the theme's templates are ported to tera 2, which zola uses since 0.23
   ZOLA_VERSION: "0.23.6"
 
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,16 +36,25 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           "$HOME/.local/bin/zola" --version
 
+      - id: pages
+        uses: actions/configure-pages@v5
+
       - name: build
         working-directory: website
         run: |
           zola check --skip-external-links
-          zola build
+          zola build --base-url "${{ steps.pages.outputs.base_url }}"
 
-      - name: publish to gh-pages
-        uses: peaceiris/actions-gh-pages@v4
+      - uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: website/public
-          publish_branch: gh-pages
-          force_orphan: true
+          path: website/public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
