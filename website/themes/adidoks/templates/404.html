@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}Page not found {{ config.extra.title_separator }} {{ config.title }}{% endblock title %}
+
+{% block content %}
+<div class="wrap container" role="document">
+  <div class="content">
+    <section class="section container-fluid mt-n3 pb-3">
+      <div class="row justify-content-center">
+        <div class="col-md-12 col-lg-10 col-xxl-8">
+          <article>
+            <h1 class="text-center">Page not found :(</h1>
+            <p class="text-center">The page you are looking for doesn't exist or has been moved. <a href="{{ get_url(path="docs/getting-started/introduction/") | safe }}">Start from the introduction</a>.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock content %}

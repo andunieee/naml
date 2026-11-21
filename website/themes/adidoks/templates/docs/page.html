@@ -1,0 +1,82 @@
+{#- a docs page: the adidoks sidebar, table of contents and previous/next links, ported to tera 2 -#}
+{% extends "base.html" %}
+
+{% block title %}{{ page.title }} {{ config.extra.title_separator }} {{ config.title }}{% endblock title %}
+{% block description %}{{ page.description | default(value=config.description) }}{% endblock description %}
+{% block body_class %}docs single{% endblock body_class %}
+
+{% block content %}
+{% set docs = get_section(path="docs/_index.md") %}
+{#- every docs page in sidebar order, to find the previous and next ones -#}
+{% set_global previous = false %}
+{% set_global next = false %}
+{% set_global last = false %}
+{% set_global found = false %}
+{% for s in docs.subsections %}
+  {% set sub = get_section(path=s) %}
+  {% for p in sub.pages %}
+    {% if found and not next %}{% set_global next = p %}{% endif %}
+    {% if p.permalink == page.permalink %}
+      {% set_global found = true %}
+      {% set_global previous = last %}
+    {% endif %}
+    {% set_global last = p %}
+  {% endfor %}
+{% endfor %}
+<div class="wrap container" role="document">
+  <div class="content">
+    <div class="row flex-xl-nowrap">
+      <div class="col-lg-5 col-xl-4 docs-sidebar">
+        <nav class="docs-links" aria-label="Main navigation">
+          {% for s in docs.subsections %}
+            {% set sub = get_section(path=s) %}
+            {% if sub.pages %}
+            <h3>{{ sub.title }}</h3>
+            <ul class="list-unstyled">
+              {% for p in sub.pages %}
+              <li><a class="docs-link{% if p.permalink == page.permalink %} active{% endif %}" href="{{ p.permalink | safe }}">{{ p.title }}</a></li>
+              {% endfor %}
+            </ul>
+            {% endif %}
+          {% endfor %}
+        </nav>
+      </div>
+      {% if page.toc %}
+      <nav class="docs-toc d-none d-xl-block col-xl-3" aria-label="Secondary navigation">
+        <div class="page-links">
+          <h3>On this page</h3>
+          <nav id="TableOfContents">
+            <ul>
+              {% for h in page.toc %}
+              <li><a href="{{ h.permalink | safe }}">{{ h.title }}</a></li>
+              {% if h.children %}
+              <ul>
+                {% for h2 in h.children %}
+                <li><a href="{{ h2.permalink | safe }}">{{ h2.title }}</a></li>
+                {% endfor %}
+              </ul>
+              {% endif %}
+              {% endfor %}
+            </ul>
+          </nav>
+        </div>
+      </nav>
+      {% endif %}
+      <main class="docs-content col-lg-11 col-xl-9">
+        <h1>{{ page.title }}</h1>
+        {% if page.extra.lead is defined %}<p class="lead">{{ page.extra.lead | markdown(inline=true) | safe }}</p>{% endif %}
+        {{ page.content | safe }}
+        <p class="edit-page"><a href="{{ config.extra.docs_repo }}/blob/{{ config.extra.repo_branch }}/website/content/{{ page.relative_path }}"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-edit-2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>Edit this page on GitHub</a></p>
+        <div class="docs-navigation d-flex justify-content-between">
+          {% if previous %}
+          <a href="{{ previous.permalink | safe }}"><div class="card my-1"><div class="card-body py-2">&larr; {{ previous.title }}</div></div></a>
+          {% endif %}
+          {% if next %}
+          <a class="ms-auto" href="{{ next.permalink | safe }}"><div class="card my-1"><div class="card-body py-2">{{ next.title }} &rarr;</div></div></a>
+          {% endif %}
+        </div>
+      </main>
+    </div>
+  </div>
+</div>
+{% endblock content %}

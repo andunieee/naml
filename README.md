@@ -2,6 +2,9 @@
 
 AppImages installer updater and manager for Linux.
 
+**Documentation: <https://andunieee.github.io/naml/>**, with a user guide and
+diagrams of how everything works. Its sources are in [`website/`](website/).
+
 ## what it does
 
 - **Installs and integrates apps.** AppImages, static binaries and archives

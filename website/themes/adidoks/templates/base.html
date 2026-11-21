@@ -1,0 +1,72 @@
+{#- the adidoks layout, ported to zola 0.23 (tera 2): the theme's macros are inlined here -#}
+<!DOCTYPE html>
+<html lang="{{ config.extra.language_code }}">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="x-ua-compatible" content="ie=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<title>{% block title %}{{ config.title }} {{ config.extra.title_separator }} {{ config.extra.title_addition }}{% endblock title %}</title>
+<meta name="description" content="{% block description %}{{ config.description }}{% endblock description %}">
+<link rel="preload" as="font" href="{{ get_url(path="fonts/vendor/jost/jost-v4-latin-regular.woff2") | safe }}" type="font/woff2" crossorigin>
+<link rel="preload" as="font" href="{{ get_url(path="fonts/vendor/jost/jost-v4-latin-700.woff2") | safe }}" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="{{ get_url(path="main.css") | safe }}">
+<link rel="stylesheet" href="{{ get_url(path="naml.css") | safe }}">
+<meta name="theme-color" content="{{ config.extra.theme_color }}">
+<link rel="icon" type="image/svg+xml" href="{{ get_url(path="favicon.svg") | safe }}">
+</head>
+<body class="{% block body_class %}home{% endblock body_class %}">
+<div class="header-bar fixed-top"></div>
+<header class="navbar fixed-top navbar-expand-md navbar-light">
+  <div class="container">
+    <input class="menu-btn order-0" type="checkbox" id="menu-btn">
+    <label class="menu-icon d-md-none" for="menu-btn"><span class="navicon"></span></label>
+    <a class="navbar-brand order-1 order-md-0 me-auto" href="{{ get_url(path="/") | safe }}">{{ config.title }}</a>
+    <button id="mode" class="btn btn-link order-2 order-md-4" type="button" aria-label="Toggle mode">
+      <span class="toggle-dark"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-moon"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></span>
+      <span class="toggle-light"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-sun"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg></span>
+    </button>
+    <ul class="navbar-nav fork-me order-3 order-md-5">
+      {% for val in config.extra.menu.social %}
+      <li class="nav-item">
+        <a class="nav-link" href="{{ val.url | safe }}">{{ val.pre | safe }}<span class="ms-2 visually-hidden">{{ val.name }}</span></a>
+      </li>
+      {% endfor %}
+    </ul>
+    <div class="collapse navbar-collapse order-4 order-md-1">
+      <ul class="navbar-nav main-nav me-auto order-5 order-md-2">
+        {% for val in config.extra.menu.main %}
+        <li class="nav-item{% if current_path is defined and val.section in current_path %} active{% endif %}">
+          <a class="nav-link" href="{{ get_url(path=val.url, trailing_slash=true) | safe }}">{{ val.name }}</a>
+        </li>
+        {% endfor %}
+      </ul>
+      <div class="break order-6 d-md-none"></div>
+      <form class="navbar-form flex-grow-1 order-7 order-md-3">
+        <input id="userinput" class="form-control is-search" type="search" placeholder="Search docs..." aria-label="Search docs..." autocomplete="off">
+        <div id="suggestions" class="shadow bg-white rounded"></div>
+      </form>
+    </div>
+  </div>
+</header>
+
+{% block content %}{% endblock content %}
+
+<footer class="footer text-muted">
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 order-last order-lg-first">
+        <ul class="list-inline">
+          <li class="list-inline-item">{{ config.extra.footer.info | safe }}</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="{{ get_url(path="js/main.js") | safe }}" defer></script>
+<script src="{{ get_url(path="plugins/elasticlunr.min.js") | safe }}" defer></script>
+<script src="{{ get_url(path="search_index." ~ config.default_language ~ ".js") | safe }}" defer></script>
+<script src="{{ get_url(path="js/search.js") | safe }}" defer></script>
+<script type="module" src="{{ get_url(path="diagrams.js") | safe }}"></script>
+</body>
+</html>

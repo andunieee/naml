@@ -1,0 +1,34 @@
+/* additions to the adidoks styles for naml's docs */
+
+/* code blocks are highlighted with light-dark() colors: follow the theme's toggle */
+body { color-scheme: light; }
+body.dark { color-scheme: dark; }
+.docs-content pre.giallo { border-radius: 0.25rem; padding: 1rem; }
+
+.diagram {
+  margin: 1.5rem 0;
+  text-align: center;
+  overflow-x: auto;
+}
+.diagram svg { max-width: 100%; height: auto; }
+
+.docs-content table {
+  width: 100%;
+  margin: 1.5rem 0;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+.docs-content th,
+.docs-content td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.25);
+  vertical-align: top;
+  text-align: left;
+}
+.docs-content th { font-weight: 600; }
+.docs-content td code { white-space: nowrap; }
+
+/* keep two-word menu entries on one line */
+.navbar .main-nav .nav-link { white-space: nowrap; }
+
+pre.giallo { overflow-x: auto; }
