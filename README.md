@@ -8,8 +8,8 @@ AppImages installer updater and manager for Linux.
   (tar.*, zip) are installed under your home directory, no root needed. Each
   graphical app gets an entry in the applications menu (also called the
   application launcher, or in freedesktop terms a *desktop entry*), plus its
-  icon, and a command in `~/.local/bin`. Use `--no-desktop` / `--no-bin` to skip
-  either one.
+  icon, and a command in `~/.local/bin` (a symlink to the installed
+  executable). Use `--no-desktop` / `--no-bin` to skip either one.
 - **Updates apps**, including through the
   [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate)
   protocol: the update information embedded in an AppImage (`zsync|...` and
@@ -30,6 +30,34 @@ For each app, naml writes `~/.local/share/applications/naml-<id>.desktop`
 point at the installed files, or a minimal generated one), copies the icon
 into naml's data directory, and runs `update-desktop-database` so the desktop
 environment picks it up. Removing the app removes those files.
+
+### ids and authors
+
+Every app has an id and an author, written `<author>/<id>`. For apps from the
+catalog the author is the publisher's npub. For everything else it is where
+the app came from: `github.com/<owner>` for GitHub repositories, the website's
+domain for urls (`telegram.org/telegram`) and `local` for files. Ids only
+have to be unique per author; when two installed apps share one, use the
+`<author>/<id>` form. For downloads, naml takes the id from the archive's
+top-level directory or the file name, and `--id` picks it yourself.
+
+### changing apps by hand
+
+naml keeps these changes, so updates, rollbacks and reinstalls redo them:
+
+```sh
+naml rename <app> <name>          # your own name; also renames the command
+naml set <app> exec Telegram      # run another file of the archive (no value: let naml pick)
+naml set <app> id telegram        # a new id, for apps that didn't come from the catalog
+naml desktop create <app>         # add it to the applications menu even if it isn't graphical
+naml desktop set <app> Name "Telegram Desktop"
+naml desktop set <app> Categories "Network;Chat;"
+naml desktop unset <app> Comment  # remove a key
+naml desktop edit <app>           # edit the launcher in $VISUAL / $EDITOR
+naml desktop show <app>
+naml desktop reset <app>          # undo every change to the launcher
+naml desktop remove <app>         # take it out of the menu
+```
 
 ## publishing your app
 

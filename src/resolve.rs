@@ -2,7 +2,8 @@
 //!
 //! an app can be referred to by its petname, by its "d" tag when that is unambiguous, or by
 //! "<author>/<d>" where the author is an npub, nprofile, hex pubkey or nip-05 address. naddr
-//! codes work too.
+//! codes work too. apps that didn't come from nostr have an author made from where they came
+//! from: "github.com/<owner>/<d>", "<domain>/<d>" or "local/<d>".
 
 use crate::Ctx;
 use crate::db::{App, Listing};
@@ -63,6 +64,12 @@ fn looks_like_author(s: &str) -> bool {
 /// find an installed app
 pub async fn installed(ctx: &Ctx, input: &str) -> Result<App> {
     let apps = ctx.db.apps().all()?;
+    if let Some(app) = apps
+        .iter()
+        .find(|a| a.pubkey.is_none() && a.qualified() == input.trim())
+    {
+        return Ok(app.clone());
+    }
     match Ref::parse(input) {
         Ref::Plain(name) => {
             if let Some(app) = ctx.db.apps().by_petname(name.clone())? {

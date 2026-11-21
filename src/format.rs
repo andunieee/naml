@@ -95,8 +95,9 @@ fn read_up_to(r: &mut impl Read, buf: &mut [u8]) -> std::io::Result<usize> {
     Ok(total)
 }
 
-/// extract an archive into `dest`, stripping a lone top-level directory
-pub fn extract(path: &Path, format: Format, dest: &Path) -> Result<()> {
+/// extract an archive into `dest`, stripping a lone top-level directory; returns that
+/// directory's name, which often names the app ("Telegram/", "helix-25.01-x86_64-linux/")
+pub fn extract(path: &Path, format: Format, dest: &Path) -> Result<Option<String>> {
     std::fs::create_dir_all(dest)?;
     let file = std::fs::File::open(path)?;
     let reader = std::io::BufReader::new(file);
@@ -124,18 +125,20 @@ fn untar(reader: impl Read, dest: &Path) -> Result<()> {
 }
 
 /// "app-1.2/{bin,share}" -> "{bin,share}"
-fn flatten(dest: &Path) -> Result<()> {
+fn flatten(dest: &Path) -> Result<Option<String>> {
     let entries: Vec<_> = std::fs::read_dir(dest)?.collect::<Result<_, _>>()?;
     if let [only] = entries.as_slice()
         && only.file_type()?.is_dir()
     {
+        let name = only.file_name().to_string_lossy().into_owned();
         let inner = only.path();
         let tmp = dest.with_extension("flatten");
         std::fs::rename(&inner, &tmp)?;
         std::fs::remove_dir(dest)?;
         std::fs::rename(&tmp, dest)?;
+        return Ok(Some(name));
     }
-    Ok(())
+    Ok(None)
 }
 
 pub fn make_executable(path: &Path) -> Result<()> {
@@ -182,6 +185,15 @@ fn is_program(path: &Path) -> bool {
     head[..n].starts_with(b"\x7fELF") || head[..n].starts_with(b"#!")
 }
 
+/// every program inside an extracted tree, sorted
+pub fn programs(root: &Path) -> Vec<PathBuf> {
+    let mut files = vec![];
+    walk(root, 0, &mut files);
+    files.retain(|p| is_program(p));
+    files.sort();
+    files
+}
+
 /// pick the main executable of an extracted archive
 pub fn find_executable(root: &Path, explicit: Option<&str>, hints: &[&str]) -> Result<PathBuf> {
     if let Some(rel) = explicit {
@@ -194,9 +206,15 @@ pub fn find_executable(root: &Path, explicit: Option<&str>, hints: &[&str]) -> R
 
     let mut files = vec![];
     walk(root, 0, &mut files);
-    let hints: Vec<String> = hints.iter().map(|h| h.to_lowercase()).collect();
+    // an empty hint would be contained in every name
+    let hints: Vec<String> = hints
+        .iter()
+        .map(|h| h.trim().to_lowercase())
+        .filter(|h| !h.is_empty())
+        .collect();
 
-    let mut best: Option<(i32, PathBuf)> = None;
+    // ties go to the biggest file: the app itself is usually much bigger than its helpers
+    let mut best: Option<((i32, u64), PathBuf)> = None;
     for path in files.into_iter().filter(|p| is_program(p)) {
         let rel = path.strip_prefix(root).unwrap_or(&path);
         let name = rel
@@ -215,11 +233,19 @@ pub fn find_executable(root: &Path, explicit: Option<&str>, hints: &[&str]) -> R
         if rel.parent().is_some_and(|p| p.ends_with("bin")) {
             score += 10;
         }
-        if name.ends_with(".sh") || name.contains("uninstall") || name.contains("crash") {
+        if name.ends_with(".sh")
+            || ["uninstall", "crash", "updater", "sandbox"]
+                .iter()
+                .any(|helper| name.contains(helper))
+        {
             score -= 20;
         }
-        if best.as_ref().is_none_or(|(s, _)| score > *s) {
-            best = Some((score, path));
+        let rank = (
+            score,
+            std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0),
+        );
+        if best.as_ref().is_none_or(|(r, _)| rank > *r) {
+            best = Some((rank, path));
         }
     }
     best.map(|(_, p)| p).ok_or_else(|| {
@@ -289,4 +315,35 @@ pub fn elf_arch(path: &Path) -> Option<&'static str> {
         0xf3 => "riscv64",
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn program(dir: &Path, name: &str, size: usize) {
+        let path = dir.join(name);
+        let mut body = b"\x7fELF".to_vec();
+        body.resize(size, 0);
+        std::fs::write(&path, body).unwrap();
+        make_executable(&path).unwrap();
+    }
+
+    #[test]
+    fn skips_updaters_and_ignores_empty_hints() {
+        let dir = std::env::temp_dir().join(format!("naml-test-exec-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        program(&dir, "Updater", 100);
+        program(&dir, "Telegram", 1000);
+        let exe = find_executable(&dir, None, &["app", "app", ""]).unwrap();
+        assert_eq!(exe.file_name().unwrap(), "Telegram");
+
+        // without the name penalty, size breaks the tie
+        program(&dir, "Helper", 10);
+        std::fs::remove_file(dir.join("Updater")).unwrap();
+        let exe = find_executable(&dir, None, &[""]).unwrap();
+        assert_eq!(exe.file_name().unwrap(), "Telegram");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

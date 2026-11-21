@@ -27,6 +27,9 @@ struct Origin {
     address: String,
     pubkey: Option<String>,
     d: String,
+    /// `d` was made up from a file name and can be replaced by a better one once the download
+    /// is unpacked
+    infer_d: bool,
     name: Option<String>,
     summary: Option<String>,
     version: Option<String>,
@@ -46,6 +49,7 @@ impl Origin {
             address: pkg.address(),
             pubkey: Some(pkg.pubkey.to_hex()),
             d: pkg.d.clone(),
+            infer_d: false,
             name: pkg.name.clone(),
             summary: pkg.summary.clone(),
             version: pkg.version.clone(),
@@ -89,6 +93,7 @@ pub async fn install(ctx: &Ctx, target: &str, opts: &Options) -> Result<App> {
                     .id
                     .clone()
                     .unwrap_or_else(|| download::slug_from_filename(&name)),
+                infer_d: opts.id.is_none(),
                 name: None,
                 summary: None,
                 version: None,
@@ -144,6 +149,7 @@ async fn github_origin(ctx: &Ctx, repo: &github::Repo, opts: &Options) -> Result
             .id
             .clone()
             .unwrap_or_else(|| download::slug_from_filename(&repo.repo)),
+        infer_d: false,
         name: None,
         summary: info
             .and_then(|i| i.description)
@@ -160,17 +166,18 @@ async fn github_origin(ctx: &Ctx, repo: &github::Repo, opts: &Options) -> Result
     })
 }
 
-async fn install_origin(ctx: &Ctx, origin: Origin, opts: &Options) -> Result<App> {
-    if let Some(existing) = ctx.db.apps().by_address(origin.address.clone())? {
+async fn install_origin(ctx: &Ctx, mut origin: Origin, opts: &Options) -> Result<App> {
+    let existing = ctx.db.apps().by_address(origin.address.clone())?;
+    if let Some(existing) = &existing {
         if !opts.force {
             bail!(
                 "{} is already installed as {}, use `naml update {}` (or --force to reinstall)",
-                origin.d,
+                existing.d,
                 existing.handle(),
                 existing.handle()
             );
         }
-        remove(ctx, &existing)?;
+        remove(ctx, existing)?;
     }
     if let Some(petname) = &opts.petname {
         validate_name(petname)?;
@@ -180,7 +187,6 @@ async fn install_origin(ctx: &Ctx, origin: Origin, opts: &Options) -> Result<App
             bail!("the name {petname} is already taken");
         }
     }
-    let slug = choose_slug(ctx, &origin, opts.petname.as_deref())?;
 
     let scratch = ctx.paths.scratch()?;
     let label = origin.name.clone().unwrap_or_else(|| origin.d.clone());
@@ -207,19 +213,43 @@ async fn install_origin(ctx: &Ctx, origin: Origin, opts: &Options) -> Result<App
             std::env::consts::ARCH
         );
     }
+    let (staged, top_dir) = unpack(&dl.path, format, &scratch)?;
+    if origin.infer_d {
+        // the archive's own directory usually names the app best, then the file name the
+        // server gave (after redirects), then the url we were given
+        let from_dir = top_dir
+            .as_deref()
+            .filter(|name| !is_generic_dir(name))
+            .and_then(download::filename_slug);
+        let from_file = dl.filename.as_deref().and_then(download::filename_slug);
+        if let Some(d) = from_dir.or(from_file.filter(|_| origin.d == "app")) {
+            origin.d = d;
+        }
+    }
+    let slug = choose_slug(
+        ctx,
+        &origin.d,
+        origin.pubkey.as_deref(),
+        opts.petname.as_deref(),
+        None,
+    )?;
+
+    // a reinstall keeps what was changed by hand
+    let (exec_override, desktop_wanted, desktop_overrides) = match existing {
+        Some(e) => (e.exec_override, e.desktop_wanted, e.desktop_overrides),
+        None => (None, false, vec![]),
+    };
+    let exec = exec_override
+        .as_deref()
+        .filter(|rel| staged.join(rel).is_file())
+        .or(origin.exec.as_deref());
     let hints = [
         slug.as_str(),
         origin.d.as_str(),
         origin.name.as_deref().unwrap_or(""),
+        top_dir.as_deref().unwrap_or(""),
     ];
-    let (staged, exec_rel) = stage(
-        &dl.path,
-        format,
-        &scratch,
-        &slug,
-        origin.exec.as_deref(),
-        &hints,
-    )?;
+    let exec_rel = place(&staged, format, &slug, exec, &hints)?;
 
     let root = ctx.paths.apps.join(&slug);
     if root.exists() {
@@ -243,8 +273,11 @@ async fn install_origin(ctx: &Ctx, origin: Origin, opts: &Options) -> Result<App
         size: dl.size,
         root: root.to_string_lossy().into_owned(),
         exec: root.join(&exec_rel).to_string_lossy().into_owned(),
+        exec_override,
         icon_url: origin.icon_url,
         desktop_file: None,
+        desktop_wanted,
+        desktop_overrides,
         icon_file: None,
         bin_link: None,
         update_info: origin.update_info,
@@ -275,7 +308,15 @@ async fn install_origin(ctx: &Ctx, origin: Origin, opts: &Options) -> Result<App
     Ok(app)
 }
 
-fn validate_name(name: &str) -> Result<()> {
+/// directory names that say nothing about the app inside
+fn is_generic_dir(name: &str) -> bool {
+    matches!(
+        name.to_lowercase().as_str(),
+        "bin" | "usr" | "opt" | "dist" | "build" | "release" | "out" | "package" | "app" | "files"
+    )
+}
+
+pub fn validate_name(name: &str) -> Result<()> {
     if name.is_empty()
         || name.starts_with('.')
         || name.contains('/')
@@ -286,12 +327,19 @@ fn validate_name(name: &str) -> Result<()> {
     Ok(())
 }
 
-fn choose_slug(ctx: &Ctx, origin: &Origin, petname: Option<&str>) -> Result<String> {
+/// the local identifier for an app: its petname, or its "d" tag made unique. `current` is the
+/// slug the app already has, which doesn't count as taken
+pub fn choose_slug(
+    ctx: &Ctx,
+    d: &str,
+    pubkey: Option<&str>,
+    petname: Option<&str>,
+    current: Option<&str>,
+) -> Result<String> {
     if let Some(p) = petname {
         return Ok(p.to_string());
     }
-    let base: String = origin
-        .d
+    let base: String = d
         .chars()
         .map(|c| {
             if c == '/' || c.is_whitespace() {
@@ -309,13 +357,16 @@ fn choose_slug(ctx: &Ctx, origin: &Origin, petname: Option<&str>) -> Result<Stri
     };
 
     let free = |s: &str| -> Result<bool> {
+        if current == Some(s) {
+            return Ok(true);
+        }
         Ok(!ctx.db.apps().contains(AppSlug::new(s))?
             && ctx.db.apps().by_petname(s.to_string())?.is_none())
     };
     if free(&base)? {
         return Ok(base);
     }
-    if let Some(pk) = &origin.pubkey {
+    if let Some(pk) = pubkey {
         let npub = ui::npub(pk);
         let candidate = format!("{base}-{}", &npub[5..13]);
         if free(&candidate)? {
@@ -331,35 +382,51 @@ fn choose_slug(ctx: &Ctx, origin: &Origin, petname: Option<&str>) -> Result<Stri
     unreachable!()
 }
 
-/// lay the app out in a directory under `scratch`, returns it and the executable's path in it
-pub fn stage(
-    file: &Path,
-    format: Format,
-    scratch: &Path,
-    slug: &str,
-    exec: Option<&str>,
-    hints: &[&str],
-) -> Result<(PathBuf, PathBuf)> {
+/// where [`unpack`] keeps a single-file app until [`place`] names it
+const UNPLACED: &str = ".naml-download";
+
+/// lay the download out in a fresh directory under `scratch`: archives are extracted, and the
+/// name of the lone top-level directory they had is returned
+pub fn unpack(file: &Path, format: Format, scratch: &Path) -> Result<(PathBuf, Option<String>)> {
     let dir = scratch.join("app");
     if dir.exists() {
         std::fs::remove_dir_all(&dir)?;
     }
     std::fs::create_dir_all(&dir)?;
+    match format {
+        Format::AppImage | Format::Binary => {
+            std::fs::rename(file, dir.join(UNPLACED))?;
+            Ok((dir, None))
+        }
+        archive => {
+            let top = format::extract(file, archive, &dir)?;
+            Ok((dir, top))
+        }
+    }
+}
+
+/// pick (or, for single files, name) the executable of an unpacked app, returns its path in `dir`
+pub fn place(
+    dir: &Path,
+    format: Format,
+    slug: &str,
+    exec: Option<&str>,
+    hints: &[&str],
+) -> Result<PathBuf> {
     let rel = match format {
         // a fixed name, so the path stays the same across updates
         Format::AppImage => PathBuf::from(format!("{slug}.AppImage")),
         Format::Binary => PathBuf::from(slug),
-        archive => {
-            format::extract(file, archive, &dir)?;
-            let exe = format::find_executable(&dir, exec, hints)?;
-            let rel = exe.strip_prefix(&dir)?.to_path_buf();
+        _ => {
+            let exe = format::find_executable(dir, exec, hints)?;
+            let rel = exe.strip_prefix(dir)?.to_path_buf();
             format::make_executable(&exe)?;
-            return Ok((dir, rel));
+            return Ok(rel);
         }
     };
-    std::fs::rename(file, dir.join(&rel))?;
+    std::fs::rename(dir.join(UNPLACED), dir.join(&rel))?;
     format::make_executable(&dir.join(&rel))?;
-    Ok((dir, rel))
+    Ok(rel)
 }
 
 /// create the launcher, icon and command for an app (replacing old ones)
@@ -454,20 +521,25 @@ pub async fn integrate(
             .map(|p| p.to_string_lossy().into_owned());
         let exec_str = exec.to_string_lossy();
 
-        // apps without a desktop file only get one when they look graphical: AppImages, or
-        // whatever has an icon
+        // apps without a desktop file only get one when they look graphical (AppImages, or
+        // whatever has an icon) or when it was asked for
         let entry = match &desktop {
             Some(text) => Some(Desktop::parse(text).rewrite(&exec_str, icon_str.as_deref(), &slug)),
-            None if format == Format::AppImage || icon_str.is_some() => Some(Desktop::minimal(
-                &app.name,
-                app.summary.as_deref(),
-                &exec_str,
-                icon_str.as_deref(),
-                &slug,
-            )),
+            None if format == Format::AppImage || icon_str.is_some() || app.desktop_wanted => {
+                Some(Desktop::minimal(
+                    &app.name,
+                    app.summary.as_deref(),
+                    &exec_str,
+                    icon_str.as_deref(),
+                    &slug,
+                ))
+            }
             None => None,
         };
         if let Some(entry) = entry {
+            let mut entry = Desktop::parse(&entry);
+            entry.apply(&app.desktop_overrides);
+            let entry = entry.to_text();
             let path = ctx.paths.applications.join(format!("naml-{slug}.desktop"));
             std::fs::write(&path, entry)?;
             app.desktop_file = Some(path.to_string_lossy().into_owned());
@@ -530,6 +602,42 @@ pub fn disintegrate(ctx: &Ctx, app: &App) {
     if touched_desktop {
         refresh_desktop_database(ctx);
     }
+}
+
+/// give an app a new slug: move its files and launcher, and re-key it in the database
+pub async fn relocate(ctx: &Ctx, app: &mut App, slug: String) -> Result<()> {
+    let old = app.slug.clone();
+    if old.0 == slug {
+        return Ok(());
+    }
+    disintegrate(ctx, app);
+    let old_root = PathBuf::from(&app.root);
+    let new_root = ctx.paths.apps.join(&slug);
+    if new_root.exists() {
+        bail!("{} is in the way", new_root.display());
+    }
+    if old_root.exists() {
+        std::fs::rename(&old_root, &new_root)?;
+    }
+    let old_previous = ctx.paths.previous.join(&old.0);
+    if old_previous.exists() {
+        std::fs::rename(&old_previous, ctx.paths.previous.join(&slug))?;
+    }
+    if let Ok(rel) = Path::new(&app.exec).strip_prefix(&old_root) {
+        app.exec = new_root.join(rel).to_string_lossy().into_owned();
+    }
+    app.root = new_root.to_string_lossy().into_owned();
+    app.slug = AppSlug::new(slug);
+
+    let scratch = ctx.paths.scratch()?;
+    let bin = app.bin_link.is_some();
+    integrate(ctx, app, bin, false, &scratch).await?;
+    ctx.db.write(|tx| {
+        tx.apps().delete(old.clone())?;
+        tx.apps().insert(app)?;
+        Ok::<_, orangedb::Error>(())
+    })?;
+    Ok(())
 }
 
 pub fn remove(ctx: &Ctx, app: &App) -> Result<()> {

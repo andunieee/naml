@@ -220,6 +220,12 @@ fn hash_into<D: Digest>(path: &Path, hasher: &mut D) -> Result<()> {
 
 /// a stable identifier out of a file name: "Obsidian-1.5.3-x86_64.AppImage" -> "obsidian"
 pub fn slug_from_filename(name: &str) -> String {
+    filename_slug(name).unwrap_or_else(|| "app".into())
+}
+
+/// like [`slug_from_filename`], but nothing when the name doesn't say anything ("linux",
+/// "x86_64.tar.gz")
+pub fn filename_slug(name: &str) -> Option<String> {
     let lower = name.to_lowercase();
     let mut stem = lower.as_str();
     for ext in [
@@ -259,7 +265,7 @@ pub fn slug_from_filename(name: &str) -> String {
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
         .collect();
-    if slug.is_empty() { "app".into() } else { slug }
+    (!slug.is_empty()).then_some(slug)
 }
 
 #[cfg(test)]
@@ -282,5 +288,8 @@ mod tests {
         );
         assert_eq!(slug_from_filename("ripgrep"), "ripgrep");
         assert_eq!(slug_from_filename("Some App-v2.AppImage"), "some-app");
+        assert_eq!(slug_from_filename("linux"), "app");
+        assert_eq!(filename_slug("linux"), None);
+        assert_eq!(filename_slug("Telegram").as_deref(), Some("telegram"));
     }
 }

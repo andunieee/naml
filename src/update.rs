@@ -260,13 +260,29 @@ pub async fn apply(ctx: &Ctx, available: Available) -> Result<bool> {
         None => Format::detect(&dl.path)?,
     };
     let slug = app.slug.0.clone();
-    let hints = [slug.as_str(), app.d.as_str(), app.name.as_str()];
-    let (staged, exec_rel) = install::stage(
-        &dl.path,
+    let (staged, top_dir) = install::unpack(&dl.path, format, &scratch)?;
+    // the executable picked by hand wins, as long as the new version still has it
+    let exec_override = app.exec_override.as_deref().filter(|rel| {
+        let found = staged.join(rel).is_file();
+        if !found {
+            ui::warn(format!(
+                "the new version of {} has no {rel}, picking the executable again",
+                app.handle()
+            ));
+        }
+        found
+    });
+    let hints = [
+        slug.as_str(),
+        app.d.as_str(),
+        app.name.as_str(),
+        top_dir.as_deref().unwrap_or(""),
+    ];
+    let exec_rel = install::place(
+        &staged,
         format,
-        &scratch,
         &slug,
-        exec_hint.as_deref(),
+        exec_override.or(exec_hint.as_deref()),
         &hints,
     )?;
     install::replace_files(ctx, &mut app, &staged, &exec_rel, &dl)?;

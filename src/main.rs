@@ -2,6 +2,7 @@ mod appimage;
 mod db;
 mod desktop;
 mod download;
+mod edit;
 mod format;
 mod github;
 mod install;
@@ -30,7 +31,7 @@ pub struct Ctx {
     name = "naml",
     version,
     about = "install, update and integrate portable linux apps",
-    after_help = "apps can be referred to by name, by \"d\" tag, or as <npub|nip05|hex>/<d> when the \"d\" tag is ambiguous"
+    after_help = "apps can be referred to by name, by id (\"d\" tag), or as <author>/<id> when the id is ambiguous; the author is an npub, nip-05 or hex pubkey for apps from the catalog, and github.com/<owner>, the website's domain or \"local\" for the others"
 )]
 struct Cli {
     /// answer yes to every question
@@ -112,7 +113,21 @@ enum Command {
     },
     /// give an app a name of your own, or drop it
     #[command(visible_alias = "rename")]
-    Name { app: String, name: Option<String> },
+    Name {
+        #[arg(add = clap_complete::engine::ArgValueCompleter::new(complete_installed))]
+        app: String,
+        name: Option<String>,
+    },
+    /// change how an installed app is set up
+    Set {
+        #[arg(add = clap_complete::engine::ArgValueCompleter::new(complete_installed))]
+        app: String,
+        #[command(subcommand)]
+        what: SetCommand,
+    },
+    /// change an app's entry in the applications menu
+    #[command(subcommand, visible_alias = "launcher")]
+    Desktop(DesktopCommand),
     /// set your identity: nsec, bunker:// (to publish) or npub/nip-05 (read-only)
     Login { key: String },
     /// forget your identity
@@ -138,6 +153,58 @@ enum Command {
         /// shell to generate completions for
         #[arg(value_enum)]
         shell: clap_complete::Shell,
+    },
+}
+
+#[derive(Subcommand)]
+enum SetCommand {
+    /// the program to run, as a path inside the app directory or a file name; without one naml
+    /// picks it again
+    Exec { path: Option<String> },
+    /// the app's id, for apps that didn't come from the catalog
+    Id { id: String },
+}
+
+#[derive(Subcommand)]
+enum DesktopCommand {
+    /// print an app's launcher
+    Show {
+        #[arg(add = clap_complete::engine::ArgValueCompleter::new(complete_installed))]
+        app: String,
+    },
+    /// put an app in the applications menu, even if it doesn't look graphical
+    Create {
+        #[arg(add = clap_complete::engine::ArgValueCompleter::new(complete_installed))]
+        app: String,
+    },
+    /// set a key of the launcher, like Name, Comment, Categories or Terminal; without a value
+    /// your change to it is dropped
+    Set {
+        #[arg(add = clap_complete::engine::ArgValueCompleter::new(complete_installed))]
+        app: String,
+        key: String,
+        value: Option<String>,
+    },
+    /// remove a key from the launcher
+    Unset {
+        #[arg(add = clap_complete::engine::ArgValueCompleter::new(complete_installed))]
+        app: String,
+        key: String,
+    },
+    /// edit the launcher in $VISUAL or $EDITOR
+    Edit {
+        #[arg(add = clap_complete::engine::ArgValueCompleter::new(complete_installed))]
+        app: String,
+    },
+    /// undo every change made to the launcher by hand
+    Reset {
+        #[arg(add = clap_complete::engine::ArgValueCompleter::new(complete_installed))]
+        app: String,
+    },
+    /// take an app out of the applications menu
+    Remove {
+        #[arg(add = clap_complete::engine::ArgValueCompleter::new(complete_installed))]
+        app: String,
     },
 }
 
@@ -483,24 +550,82 @@ async fn run(cli: Cli) -> Result<()> {
 
         Command::Name { app, name } => {
             let mut app = resolve::installed(&ctx, &app).await?;
-            if let Some(name) = &name
-                && (ctx.db.apps().by_petname(name.clone())?.is_some()
-                    || (ctx.db.apps().contains(db::AppSlug::new(name.clone()))?
-                        && app.slug.0 != *name))
-            {
-                bail!("the name {name} is already taken");
-            }
-            app.petname = name;
-            let scratch = ctx.paths.scratch()?;
-            let bin = app.bin_link.is_some();
-            install::integrate(&ctx, &mut app, bin, false, &scratch).await?;
-            ctx.db.apps().update(&app)?;
+            edit::rename(&ctx, &mut app, name).await?;
             ui::success(format!(
                 "{} is now called {}",
                 app.qualified(),
                 app.handle()
             ));
         }
+
+        Command::Set { app, what } => {
+            let mut app = resolve::installed(&ctx, &app).await?;
+            match what {
+                SetCommand::Exec { path } => {
+                    edit::set_exec(&ctx, &mut app, path.as_deref()).await?;
+                    ui::success(format!(
+                        "{} runs {}{}",
+                        app.handle(),
+                        app.exec,
+                        if path.is_none() {
+                            " (picked by naml)"
+                        } else {
+                            ""
+                        }
+                    ));
+                }
+                SetCommand::Id { id } => {
+                    edit::set_id(&ctx, &mut app, &id).await?;
+                    ui::success(format!("{} is now {}", app.handle(), app.qualified()));
+                }
+            }
+        }
+
+        Command::Desktop(cmd) => match cmd {
+            DesktopCommand::Show { app } => {
+                edit::desktop_show(&resolve::installed(&ctx, &app).await?)?
+            }
+            DesktopCommand::Create { app } => {
+                let mut app = resolve::installed(&ctx, &app).await?;
+                edit::desktop_create(&ctx, &mut app).await?;
+                ui::success(format!(
+                    "{} is in the applications menu, `naml desktop set {} Name ...` changes it",
+                    app.handle(),
+                    app.handle()
+                ));
+            }
+            DesktopCommand::Set { app, key, value } => {
+                let mut app = resolve::installed(&ctx, &app).await?;
+                edit::desktop_set(&ctx, &mut app, &key, value.as_deref().map(Some)).await?;
+                ui::success(match &value {
+                    Some(v) => format!("{key}={v} for {}", app.handle()),
+                    None => format!("{key} of {} is back to what it was", app.handle()),
+                });
+            }
+            DesktopCommand::Unset { app, key } => {
+                let mut app = resolve::installed(&ctx, &app).await?;
+                edit::desktop_set(&ctx, &mut app, &key, Some(None)).await?;
+                ui::success(format!("removed {key} from {}", app.handle()));
+            }
+            DesktopCommand::Edit { app } => {
+                let mut app = resolve::installed(&ctx, &app).await?;
+                edit::desktop_edit(&ctx, &mut app).await?;
+            }
+            DesktopCommand::Reset { app } => {
+                let mut app = resolve::installed(&ctx, &app).await?;
+                edit::desktop_reset(&ctx, &mut app).await?;
+                ui::success(format!("the launcher of {} is as it came", app.handle()));
+            }
+            DesktopCommand::Remove { app } => {
+                let mut app = resolve::installed(&ctx, &app).await?;
+                edit::desktop_remove(&ctx, &mut app).await?;
+                ui::success(format!(
+                    "{} is out of the applications menu (`naml desktop create {}` brings it back)",
+                    app.handle(),
+                    app.handle()
+                ));
+            }
+        },
 
         Command::Login { key } => {
             let pk = nostr::login(&ctx, &key).await?;
@@ -659,9 +784,18 @@ async fn info(ctx: &Ctx, input: &str) -> Result<()> {
         row("size", &ui::human_size(app.size));
         row("source", &app.source_url);
         row("sha256", &app.sha256);
-        row("executable", &app.exec);
+        row(
+            "executable",
+            &match &app.exec_override {
+                Some(_) => format!("{} (set by hand)", app.exec),
+                None => app.exec.clone(),
+            },
+        );
         if let Some(d) = &app.desktop_file {
             row("launcher", d);
+        }
+        if !app.desktop_overrides.is_empty() {
+            row("launcher edits", &app.desktop_overrides.join(", "));
         }
         if let Some(b) = &app.bin_link {
             row("command", b);
