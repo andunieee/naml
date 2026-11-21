@@ -459,6 +459,9 @@ async fn run(cli: Cli) -> Result<()> {
         net: ritualistic::Network::new(),
         yes: cli.yes,
     };
+    if !matches!(cli.command, Command::Receive | Command::Send { .. }) {
+        install::link_old_launchers(&ctx).await;
+    }
 
     match cli.command {
         Command::Install {

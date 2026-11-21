@@ -540,9 +540,14 @@ pub async fn integrate(
             let mut entry = Desktop::parse(&entry);
             entry.apply(&app.desktop_overrides);
             let entry = entry.to_text();
-            let path = ctx.paths.applications.join(format!("naml-{slug}.desktop"));
-            std::fs::write(&path, entry)?;
-            app.desktop_file = Some(path.to_string_lossy().into_owned());
+            let name = format!("{}.desktop", launcher_id(app));
+            let file = ctx.paths.launchers.join(&name);
+            std::fs::write(&file, entry)?;
+            let link = ctx.paths.applications.join(&name);
+            let _ = std::fs::remove_file(&link);
+            std::os::unix::fs::symlink(&file, &link)
+                .with_context(|| format!("failed to link {}", link.display()))?;
+            app.desktop_file = Some(link.to_string_lossy().into_owned());
             refresh_desktop_database(ctx);
         }
     }
@@ -568,6 +573,51 @@ pub async fn integrate(
     Ok(())
 }
 
+/// launchers used to be written straight into the applications directory as
+/// "naml-<slug>.desktop"; redo those once, as links named after the author
+pub async fn link_old_launchers(ctx: &Ctx) {
+    let Ok(apps) = ctx.db.apps().all() else {
+        return;
+    };
+    for mut app in apps {
+        let Some(path) = &app.desktop_file else {
+            continue;
+        };
+        if std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
+            continue;
+        }
+        let result = async {
+            let scratch = ctx.paths.scratch()?;
+            let bin = app.bin_link.is_some();
+            integrate(ctx, &mut app, bin, false, &scratch).await?;
+            ctx.db.apps().update(&app)?;
+            Ok::<_, anyhow::Error>(())
+        }
+        .await;
+        if let Err(err) = result {
+            ui::warn(format!(
+                "couldn't redo the launcher of {}: {err:#}",
+                app.handle()
+            ));
+        }
+    }
+}
+
+/// the desktop file id of an app's launcher, made of who the app comes from and its slug:
+/// "naml-telegram.org-telegram", "naml-github.com-owner-app", "naml-npub1...-app"
+pub fn launcher_id(app: &App) -> String {
+    format!("naml-{}-{}", app.author(), app.slug.0)
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || "-_.".contains(c) {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect()
+}
+
 fn points_into(link: &Path, dir: &Path) -> bool {
     std::fs::read_link(link).is_ok_and(|target| target.starts_with(dir))
 }
@@ -588,6 +638,12 @@ async fn fetch_icon(http: &reqwest::Client, url: &str) -> Result<Vec<u8>> {
 pub fn disintegrate(ctx: &Ctx, app: &App) {
     let mut touched_desktop = false;
     if let Some(path) = &app.desktop_file {
+        // launchers from before they were links are plain files here
+        if let Ok(target) = std::fs::read_link(path)
+            && target.starts_with(&ctx.paths.launchers)
+        {
+            let _ = std::fs::remove_file(target);
+        }
         touched_desktop |= std::fs::remove_file(path).is_ok();
     }
     if let Some(path) = &app.icon_file {

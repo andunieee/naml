@@ -17,6 +17,8 @@ pub struct Paths {
     pub apps: PathBuf,
     pub previous: PathBuf,
     pub icons: PathBuf,
+    /// the launchers themselves; the applications directory links to them
+    pub launchers: PathBuf,
     pub tmp: PathBuf,
     pub db: PathBuf,
     pub applications: PathBuf,
@@ -38,6 +40,7 @@ impl Paths {
             &paths.apps,
             &paths.previous,
             &paths.icons,
+            &paths.launchers,
             &paths.tmp,
             &paths.applications,
             &paths.bin,
@@ -57,6 +60,7 @@ impl Paths {
             apps: apps_root.join("apps"),
             previous: apps_root.join("previous"),
             icons: apps_root.join("icons"),
+            launchers: apps_root.join("launchers"),
             // next to the apps, so staged apps can be renamed into place
             tmp: apps_root.join("tmp"),
             db: PathBuf::from(SYSTEM_STATE).join("naml.redb"),
@@ -77,6 +81,7 @@ impl Paths {
             apps: data.join("apps"),
             previous: data.join("previous"),
             icons: data.join("icons"),
+            launchers: data.join("launchers"),
             tmp: data.join("tmp"),
             db: data.join("naml.redb"),
             applications: share.join("applications"),

@@ -25,11 +25,13 @@ AppImages installer updater and manager for Linux.
 
 It follows the freedesktop.org
 [Desktop Entry Specification](https://specifications.freedesktop.org/desktop-entry-spec/latest/).
-For each app, naml writes `~/.local/share/applications/naml-<id>.desktop`
+For each app, naml writes `~/.local/share/naml/launchers/naml-<author>-<id>.desktop`
 (the `.desktop` file shipped in the AppImage, rewritten so `Exec=` and `Icon=`
-point at the installed files, or a minimal generated one), copies the icon
-into naml's data directory, and runs `update-desktop-database` so the desktop
-environment picks it up. Removing the app removes those files.
+point at the installed files, or a minimal generated one), links it from
+`~/.local/share/applications`, copies the icon into naml's data directory,
+and runs `update-desktop-database` so the desktop environment picks it up.
+The author part (`telegram.org`, `github.com-<owner>`, an npub, `local`)
+says where the app came from. Removing the app removes those files.
 
 ### installing for everyone
 
