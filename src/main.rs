@@ -10,6 +10,7 @@ mod nostr;
 mod paths;
 mod resolve;
 mod social;
+mod transfer;
 mod ui;
 mod update;
 mod zsync;
@@ -128,6 +129,21 @@ enum Command {
         #[command(subcommand)]
         what: SetCommand,
     },
+    /// move an app between your apps and the ones installed for everyone
+    #[command(visible_alias = "mv")]
+    Move {
+        #[arg(add = clap_complete::engine::ArgValueCompleter::new(complete_installed))]
+        app: String,
+        /// where it goes
+        #[arg(value_enum)]
+        to: Space,
+    },
+    /// the root side of `naml move <app> system`
+    #[command(name = "__receive", hide = true)]
+    Receive,
+    /// the root side of `naml move <app> user`
+    #[command(name = "__send", hide = true)]
+    Send { app: String },
     /// change an app's entry in the applications menu
     #[command(subcommand, visible_alias = "launcher")]
     Desktop(DesktopCommand),
@@ -157,6 +173,15 @@ enum Command {
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum Space {
+    /// installed for every user of this machine
+    #[value(alias = "global")]
+    System,
+    /// installed just for you
+    User,
 }
 
 #[derive(Subcommand)]
@@ -365,8 +390,15 @@ async fn main() {
         }
         return;
     }
+    if cli.system && matches!(cli.command, Command::Move { .. }) {
+        eprintln!(
+            "{} naml move takes where the app goes instead of --system: `naml move <app> system` or `naml move <app> user`",
+            style("error:").red().bold()
+        );
+        std::process::exit(1);
+    }
     if cli.system
-        && !is_root()
+        && !transfer::is_root()
         && let Err(err) = without_root(&cli)
     {
         eprintln!("{} {err:#}", style("error:").red().bold());
@@ -376,11 +408,6 @@ async fn main() {
         eprintln!("{} {err:#}", style("error:").red().bold());
         std::process::exit(1);
     }
-}
-
-fn is_root() -> bool {
-    // SAFETY: geteuid has no preconditions and can't fail
-    unsafe { libc::geteuid() == 0 }
 }
 
 /// --system without being root: apps installed for everyone are run as the user, through their
@@ -629,6 +656,32 @@ async fn run(cli: Cli) -> Result<()> {
                 }
             }
         }
+
+        Command::Move { app, to } => match to {
+            Space::System => {
+                let app = resolve::installed(&ctx, &app).await?;
+                if !ui::confirm(
+                    &format!(
+                        "install {} for every user instead of just you?",
+                        app.handle()
+                    ),
+                    ctx.yes,
+                ) {
+                    return Ok(());
+                }
+                transfer::to_system(&ctx, &app)?;
+                ui::success(format!(
+                    "{} is installed for everyone now (`naml --system ...` manages it)",
+                    app.handle()
+                ));
+            }
+            Space::User => {
+                let app = transfer::to_user(&ctx, &app).await?;
+                ui::success(format!("{} is installed just for you now", app.handle()));
+            }
+        },
+        Command::Receive => transfer::receive(&ctx).await?,
+        Command::Send { app } => transfer::send(&ctx, &app).await?,
 
         Command::Desktop(cmd) => match cmd {
             DesktopCommand::Show { app } => {

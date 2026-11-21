@@ -46,7 +46,11 @@ naml --system autoupdate enable   # a system timer that updates them as root
 These apps live in `/opt/naml`, their database in `/var/lib/naml`, their
 commands in `/usr/local/bin` and their launchers in
 `/usr/local/share/applications`. An app you also install for yourself takes
-precedence over the system one. `naml --system run <app>` runs the app as
+precedence over the system one.
+
+`naml move <app> system` moves one of your apps to the ones for everyone, and
+`naml move <app> user` brings one back, keeping its name, rollback and
+everything changed by hand. Run it as yourself; it asks for root when needed. `naml --system run <app>` runs the app as
 you, not as root. The system timer only runs a naml binary that only root
 can change, so put naml in `/usr/local/bin` before you enable it.
 
